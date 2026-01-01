@@ -1,0 +1,59 @@
+{
+  "nodes": {
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1767026758,
+        "narHash": "sha256-7fsac/f7nh/VaKJ/qm3I338+wAJa/3J57cOGpXi0Sbg=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "346dd96ad74dc4457a9db9de4f4f57dab2e5731d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1764856222,
+        "narHash": "sha256-yEJmtoFu4cJre1NuU4fb8q57Oux+NTbocnALtJ64aEI=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "ece6e266caf1effab32eceef0403b797b4330373",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "wslg-freerdp": "wslg-freerdp"
+      }
+    },
+    "wslg-freerdp": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_2"
+      },
+      "locked": {
+        "lastModified": 1764919998,
+        "narHash": "sha256-QMSrVR9Fmpz0O6HXtCDkAXTc8TGlQxdHQgr/l8gQqZA=",
+        "path": "/home/pp/workspace/wslg/vendor/FreeRDP",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/pp/workspace/wslg/vendor/FreeRDP",
+        "type": "path"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
