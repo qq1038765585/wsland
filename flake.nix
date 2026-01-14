@@ -4,10 +4,11 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
+    wslg-app.url = "path:/home/pp/workspace/wslg";
     wslg-freerdp.url = "path:/home/pp/workspace/wslg/vendor/FreeRDP";
   };
 
-  outputs = { self, nixpkgs, wslg-freerdp }:
+  outputs = { self, nixpkgs, wslg-app, wslg-freerdp }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
 
@@ -15,6 +16,7 @@
       packages = forAllSystems(system: let 
         pkgs = import nixpkgs { inherit system; };
 
+        wslgApplistLib = wslg-app.packages.${system}.wslg-applist;
         wslgFreerdpLib = wslg-freerdp.packages.${system}.default;
 
       in {
@@ -27,7 +29,7 @@
             ];
 
             buildInputs = with pkgs; [
-              wslgFreerdpLib wayland wayland-protocols wayland-scanner pixman cairo libxkbcommon wlroots_0_19
+              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo libxkbcommon wlroots_0_19 openssl
             ];
           };
       });
@@ -35,12 +37,13 @@
       devShells = forAllSystems(system: let 
         pkgs = import nixpkgs { inherit system; };
 
+        wslgApplistLib = wslg-app.packages.${system}.wslg-applist;
         wslgFreerdpLib = wslg-freerdp.packages.${system}.default;
       in {
         default = pkgs.mkShell {
             packages = with pkgs; [
               pkg-config meson ninja
-              wslgFreerdpLib wayland wayland-protocols wayland-scanner pixman cairo libxkbcommon wlroots_0_19
+              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo libxkbcommon wlroots_0_19 openssl
             ];
 
             LD_LIBRARY_PATH = "${wslgFreerdpLib}/lib";

@@ -1,48 +1,51 @@
-dep_wayland_protocols = dependency('wayland-protocols', version: '>= 1.45')
-dep_wayland_scanner = dependency('wayland-scanner', native: true)
+wayland_protos = dependency('wayland-protocols',
+                            version: '>=1.41',
+                            fallback: 'wayland-protocols',
+                            default_options: ['tests=false'],
+)
+wl_protocol_dir = wayland_protos.get_variable('pkgdatadir')
 
-program_scanner = find_program(dep_wayland_scanner.get_variable('wayland_scanner'))
-dep_wayland_protocols_base = dep_wayland_protocols.get_variable('pkgdatadir')
+wayland_scanner_dep = dependency('wayland-scanner',
+                                 kwargs: wayland_kwargs,
+                                 native: true,
+)
+wayland_scanner = find_program(
+    wayland_scanner_dep.get_variable('wayland_scanner'),
+    native: true,
+)
 
-protocol_dir = include_directories('.')
+protocols = {
+    # Stable upstream protocols
+    'xdg-shell': wl_protocol_dir / 'stable/xdg-shell/xdg-shell.xml',
+}
 
-generated_protocols = [
-    [ 'xdg-shell', 'stable' ],
-]
+protocols_code = {}
+protocols_server_header = {}
+protocols_client_header = {}
+foreach name, path : protocols
+    code = custom_target(
+        name.underscorify() + '_c',
+        input: path,
+        output: '@BASENAME@-protocol.c',
+        command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+    )
 
-foreach proto: generated_protocols
-	proto_name = proto[0]
-	if proto[1] == 'internal'
-		base_file = proto_name
-		xml_path = '@0@.xml'.format(proto_name)
-	elif proto[1] == 'stable'
-		base_file = proto_name
-		xml_path = '@0@/stable/@1@/@1@.xml'.format(dep_wayland_protocols_base, base_file)
-	else
-		base_file = '@0@-unstable-@1@'.format(proto_name, proto[1])
-		xml_path = '@0@/unstable/@1@/@2@.xml'.format(dep_wayland_protocols_base, proto_name, base_file)
-	endif
+    server_header = custom_target(
+        name.underscorify() + '_server_h',
+        input: path,
+        output: '@BASENAME@-protocol.h',
+        command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+    )
 
-	foreach output_type: [ 'client-header', 'server-header', 'private-code' ]
-		if output_type == 'client-header'
-			output_file = '@0@-client-protocol.h'.format(base_file)
-		elif output_type == 'server-header'
-			output_file = '@0@-protocol.h'.format(base_file)
-		else
-			output_file = '@0@-protocol.c'.format(base_file)
-			if dep_wayland_scanner.version().version_compare('< 1.14.91')
-				output_type = 'code'
-			endif
-		endif
+    client_header = custom_target(
+        name.underscorify() + '_client_h',
+        input: path,
+        output: '@BASENAME@-client-protocol.h',
+        command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+        build_by_default: false,
+    )
 
-		var_name = output_file.underscorify()
-		target = custom_target(
-			'@0@ @1@'.format(base_file, output_type),
-			command: [ program_scanner, output_type, '@INPUT@', '@OUTPUT@' ],
-			input: xml_path,
-			output: output_file,
-		)
-
-		set_variable(var_name, target)
-	endforeach
+    protocols_code += { name: code }
+    protocols_server_header += { name: server_header }
+    protocols_client_header += { name: client_header }
 endforeach

@@ -4,6 +4,19 @@ sources = files(
     'src/main.c',
     'src/wsland.c',
     'src/freerdp.c',
+    'src/freerdp_tls.c',
+    'src/freerdp_shell.c',
+    'src/freerdp_surface.c',
+    'src/freerdp_instance.c',
+    'src/freerdp_dispatch.c',
+    'src/freerdp_keyboard.c',
+    'src/freerdp_ctx_server_rail.c',
+    'src/freerdp_ctx_server_disp.c',
+    'src/freerdp_ctx_server_rdpgfx.c',
+    'src/freerdp_ctx_server_drdynvc.c',
+    'src/freerdp_ctx_server_applist.c',
+    'src/freerdp_ctx_server_gfxredir.c',
+    'src/freerdp_ctx_server_rail_language.c',
 )
 
 config_h = configuration_data()
@@ -47,15 +60,26 @@ add_project_arguments(cc.get_supported_arguments([
 dep_wlroots = dependency('wlroots-0.19', version : '>=0.19.2')
 dep_winpr = dependency('winpr2', version : '>=2.2.0')
 dep_freerdp = dependency('freerdp2', version : '>=2.4.0')
+dep_freerdp_server = dependency('freerdp-server2', version : '>=2.4.0')
+dep_rdpapplist = dependency('rdpapplist', version: '>= 2.0.0')
 dep_wayland_server = dependency('wayland-server', version : '>= 1.24.0')
 dep_xkbcommon = dependency('xkbcommon', version : '>=1.11.0')
+dep_openssl = dependency('openssl', version: '>= 1.1.1')
 dep_pixman = dependency('pixman-1', version : '>=0.46.4')
 def_cairo = dependency('cairo', required: false, disabler: true)
 
+wayland_kwargs = {
+    'version': '>=1.23.1',
+    'fallback': 'wayland',
+    'default_options': [
+        'tests=false',
+        'documentation=false',
+    ],
+}
+
 subdir('protocol')
 
-
-executable('wsland', sources, include_directories : [protocol_dir], dependencies : [
-    dep_wlroots, dep_winpr, dep_freerdp, dep_wayland_server, dep_pixman, def_cairo,
-    dep_xkbcommon, dep_wayland_protocols, dep_wayland_scanner,
+executable('wsland', [sources, protocols_server_header['xdg-shell']], include_directories : [], dependencies : [
+    dep_wlroots, dep_winpr, dep_freerdp, dep_freerdp_server, dep_rdpapplist, dep_wayland_server,
+    dep_pixman, def_cairo, dep_openssl, dep_xkbcommon,
 ])
