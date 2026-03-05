@@ -6,9 +6,9 @@
 #include <wlr/interfaces/wlr_output.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_output_layer.h>
+#include <wlr/render/swapchain.h>
 
 #include "wsland/server.h"
-#include "wsland/adapter.h"
 #include "wsland/utils/log.h"
 
 static const uint32_t SUPPORTED_OUTPUT_STATE = WLR_OUTPUT_STATE_BACKEND_OPTIONAL |
@@ -85,14 +85,13 @@ static bool output_set_cursor(struct wlr_output *wlr_output, struct wlr_buffer *
         wlr_buffer_lock(buffer);
     }
 
-    if (output->cache_cursor.buffer) {
-        wlr_buffer_unlock(output->cache_cursor.buffer);
+    if (output->server->cache_cursor.buffer) {
+        wlr_buffer_unlock(output->server->cache_cursor.buffer);
     }
-
-    output->cache_cursor.buffer = buffer;
-    output->cache_cursor.hotspot_x = hotspot_x;
-    output->cache_cursor.hotspot_y = hotspot_y;
-    output->cache_cursor.dirty = true;
+    output->server->cache_cursor.buffer = buffer;
+    output->server->cache_cursor.hotspot_x = hotspot_x;
+    output->server->cache_cursor.hotspot_y = hotspot_y;
+    output->server->cache_cursor.dirty = true;
     return true;
 }
 
@@ -104,7 +103,7 @@ static void output_destroy(struct wlr_output *wlr_output) {
     wsland_output *output = wsland_output_from_output(wlr_output);
 
     wlr_pointer_finish(&output->pointer);
-    wlr_output_finish(wlr_output);
+    wlr_output_destroy(wlr_output);
 
     wl_list_remove(&output->peer_link);
     wl_list_remove(&output->server_link);
@@ -144,6 +143,7 @@ wsland_output *wsland_output_create(wsland_server *server, struct wlr_output_mod
 
     wlr_output_init(&output->output, server->backend, &wsland_output_impl, server->event_loop, &state);
     wlr_output_state_finish(&state);
+    output->output.data = output;
 
     output_update_refresh(output, WSLAND_DEFAULT_REFRESH);
 

@@ -13,7 +13,7 @@
 
 #define WSLAND_DEFAULT_REFRESH (60 * 1000) // 60 Hz
 
-struct wsland_window_data;
+struct wsland_window;
 
 extern const struct wlr_keyboard_impl wsland_keyboard_impl;
 extern const struct wlr_pointer_impl wsland_pointer_impl;
@@ -27,6 +27,7 @@ typedef enum wsland_cursor_mode {
 typedef struct wsland_server_handle {
     void (*server_new_output)(struct wl_listener *listener, void *data);
     void (*server_new_input)(struct wl_listener *listener, void *data);
+    void (*server_new_surface)(struct wl_listener *listener, void *data);
     void (*server_new_xdg_toplevel)(struct wl_listener *listener, void *data);
     void (*server_new_xdg_popup)(struct wl_listener *listener, void *data);
     void (*server_cursor_motion)(struct wl_listener *listener, void *data);
@@ -38,9 +39,22 @@ typedef struct wsland_server_handle {
     void (*seat_request_set_selection)(struct wl_listener *listener, void *data);
 } wsland_server_handle;
 
+typedef struct wsland_surface {
+    struct wlr_surface *surface;
+    bool dirty;
+
+    struct {
+        struct wl_listener commit;
+        struct wl_listener destroy;
+    } events;
+
+    struct wsland_server *server;
+} wsland_surface;
+
 typedef struct wsland_toplevel {
     struct wlr_xdg_toplevel *toplevel;
     struct wlr_scene_tree *tree;
+    struct wlr_box before;
 
     struct {
         struct wl_listener map;
@@ -56,7 +70,8 @@ typedef struct wsland_toplevel {
 
     struct wl_list server_link;
 
-    struct wsland_window_data *window_data;
+    bool window_dirty;
+    struct wsland_window *window_data;
     struct wsland_server *server;
 } wsland_toplevel;
 
@@ -102,18 +117,13 @@ typedef struct wsland_output {
     struct wlr_scene_output *scene_output;
 
     struct {
-        struct wlr_buffer *buffer;
-        int hotspot_x, hotspot_y;
-        bool dirty;
-    } cache_cursor;
-
-    struct {
         struct wl_listener frame;
         struct wl_listener destroy;
     } events;
 
     struct wl_event_source *frame_timer;
     int frame_delay; // ms
+    bool primary;
 
     struct wl_list peer_link;
     struct wl_list server_link;
@@ -130,7 +140,10 @@ typedef struct wsland_server {
     struct wlr_compositor *compositor;
     struct wlr_subcompositor *subcompositor;
     struct wlr_data_device_manager *data_device_manager;
+    struct wlr_server_decoration_manager *server_decoration_manager;
+    struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
     struct wlr_xcursor_manager *cursor_manager;
+    struct wlr_viewporter *viewporter;
     struct wlr_xdg_shell *xdg_shell;
     struct wlr_cursor *cursor;
     struct wlr_scene *scene;
@@ -155,8 +168,18 @@ typedef struct wsland_server {
     } move;
 
     struct {
+        struct wlr_surface *surface;
+        struct wlr_buffer *buffer;
+        int s_hotspot_x, s_hotspot_y;
+        int hotspot_x, hotspot_y;
+        bool restore;
+        bool dirty;
+    } cache_cursor;
+
+    struct {
         struct wl_listener new_output;
         struct wl_listener new_input;
+        struct wl_listener new_surface;
         struct wl_listener new_xdg_toplevel;
         struct wl_listener new_xdg_popup;
         struct wl_listener cursor_motion_absolute;
@@ -167,13 +190,18 @@ typedef struct wsland_server {
         struct wl_listener request_cursor;
         struct wl_listener request_set_selection;
 
+        struct wl_listener wsland_cursor_destroy;
+
+        struct wl_signal wsland_surface_commit;
+        struct wl_signal wsland_window_create;
+        struct wl_signal wsland_window_commit;
+        struct wl_signal wsland_window_destroy;
+
         struct wl_signal wsland_cursor_frame;
         struct wl_signal wsland_output_frame;
-        struct wl_signal wsland_toplevel_destroy;
     } events;
 
     wsland_config *config;
-    wsland_output *cursor_output;
     wsland_server_handle *handle;
 } wsland_server;
 

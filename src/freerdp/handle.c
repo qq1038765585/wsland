@@ -1,5 +1,7 @@
 // ReSharper disable All
 #include <linux/input-event-codes.h>
+#include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_scene.h>
 
 #include "wsland/adapter.h"
 #include "wsland/freerdp.h"
@@ -284,7 +286,7 @@ static BOOL xf_input_keyboard_event(rdpInput *input, UINT16 flags, UINT16 code) 
         if (notify) {
             struct wlr_keyboard_key_event event = {0};
             event.time_msec = timespec_to_msec(&now);
-            event.keycode = key_code;
+            event.keycode = key_code - 8;
             event.state = state;
             event.update_state = true;
             wlr_keyboard_notify_key(&keyboard->keyboard, &event);
@@ -298,6 +300,33 @@ static BOOL xf_input_unicode_keyboard_event(rdpInput *input, UINT16 flags, UINT1
     return TRUE;
 }
 
+static void do_rail_client_activate(void *user_data) {
+    wsland_peer_data *data = user_data;
+
+    wsland_toplevel *toplevel;
+    wl_list_for_each(toplevel, &data->peer->freerdp->adapter->server->toplevels, server_link) {
+        wsland_window *window = toplevel->window_data;
+
+        if (window && window->window_id == data->window_id) {
+            wlr_xdg_toplevel_set_activated(toplevel->toplevel, data->activated);
+
+            if (!data->activated) {
+                wlr_seat_keyboard_notify_clear_focus(toplevel->server->seat);
+            }
+        }
+    }
+    free(data);
+}
+
+static void rail_client_activate(wsland_peer *peer, UINT32 window_id, BOOL enabled) {
+    wsland_peer_data *data = malloc(sizeof(*data));
+    data->window_id = window_id;
+    data->activated = enabled;
+    data->peer = peer;
+
+    wl_event_loop_add_idle(peer->freerdp->adapter->server->event_loop, do_rail_client_activate, data);
+}
+
 wsland_peer_handle wsland_peer_handle_impl = {
     .xf_peer_adjust_monitor_layout = xf_peer_adjust_monitor_layout,
     .xf_peer_capabilities = xf_peer_capabilities,
@@ -309,7 +338,9 @@ wsland_peer_handle wsland_peer_handle_impl = {
     .xf_input_mouse_event = xf_input_mouse_event,
     .xf_input_extended_mouse_event = xf_input_extended_mouse_event,
     .xf_input_keyboard_event = xf_input_keyboard_event,
-    .xf_input_unicode_keyboard_event = xf_input_unicode_keyboard_event
+    .xf_input_unicode_keyboard_event = xf_input_unicode_keyboard_event,
+
+    .rail_client_activate = rail_client_activate,
 };
 
 void wsland_peer_handle_init(wsland_peer *peer) {

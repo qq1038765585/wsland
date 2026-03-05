@@ -3,6 +3,7 @@ project('wsland', 'c', version : '1.0.0', default_options : ['warning_level=3', 
 sources = files(
     'src/main.c',
     'src/utils/log.c',
+    'src/utils/box.c',
     'src/utils/time.c',
     'src/utils/config.c',
     'src/server/server.c',
@@ -60,8 +61,8 @@ add_project_arguments(cc.get_supported_arguments([
  '-Wno-unused-parameter',
 ]), language: 'c')
 
-dep_wlroots = dependency('wlroots-0.19', version : '>=0.19.2')
-dep_winpr = dependency('winpr2', version : '>=2.2.0')
+dep_wlroots = dependency('wlroots-0.18', version : '>=0.18.3', fallback: 'wlroots')
+dep_winpr = dependency('winpr2', version : '>=2.4.0')
 dep_freerdp = dependency('freerdp2', version : '>=2.4.0')
 dep_freerdp_server = dependency('freerdp-server2', version : '>=2.4.0')
 dep_rdpapplist = dependency('rdpapplist', version: '>= 2.0.0')
@@ -84,6 +85,6 @@ include_dir = include_directories('include')
 subdir('protocol')
 
 executable('wsland', [sources, protocols_server_header['xdg-shell']], include_directories : [include_dir], dependencies : [
-    dep_wlroots, dep_winpr, dep_freerdp, dep_freerdp_server, dep_rdpapplist, dep_wayland_server,
+    dep_wlroots, dep_winpr, dep_freerdp, dep_rdpapplist, dep_freerdp_server, dep_wayland_server,
     dep_pixman, def_cairo, dep_openssl, dep_xkbcommon,
 ])

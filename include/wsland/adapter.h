@@ -4,6 +4,7 @@
 #include "wsland/server.h"
 #include "wsland/freerdp.h"
 
+
 typedef struct wsland_cursor_data {
     int width, height;
     int hotspot_x, hotspot_y;
@@ -12,31 +13,27 @@ typedef struct wsland_cursor_data {
     void *data; uint32_t *format; size_t *stride;
 } wsland_cursor_data;
 
-typedef struct wsland_window_data {
-    struct wlr_scene *scene;
-    struct wlr_swapchain *chain;
-    struct wlr_scene_tree *scene_tree;
+typedef struct wsland_peer_data {
+    wsland_peer *peer;
+    uint32_t window_id;
+    bool activated;
+} wsland_peer_data;
 
+typedef struct wsland_window {
     uint32_t parent_id;
     uint32_t window_id;
     uint32_t surface_id;
 
-    bool need_create;
-    bool need_update;
-    bool need_show;
-    bool need_hide;
-    bool need_damage;
-
-    bool update_title;
-    bool update_visible;
-    bool update_position;
+    bool dirty;
+    bool opaque;
+    bool move;
 
     char *title;
-    int pos_x, pos_y;
     int scale_w, scale_h;
-    struct wlr_box visible;
+    struct wlr_box current;
+    struct wlr_buffer *buffer;
     pixman_region32_t damage;
-} wsland_window_data;
+} wsland_window;
 
 void wsland_adapter_destroy_window(wsland_toplevel *toplevel);
 
@@ -45,10 +42,13 @@ void wsland_adapter_create_output_for_peer(wsland_peer *peer, rdpMonitor *monito
 
 
 typedef struct wsland_adapter_handle {
+    void (*wsland_surface_commit)(struct wl_listener *listener, void *data);
+    void (*wsland_window_create)(struct wl_listener *listener, void *data);
+    void (*wsland_window_commit)(struct wl_listener *listener, void *data);
+    void (*wsland_window_destroy)(struct wl_listener *listener, void *data);
+
     void (*wsland_cursor_frame)(struct wl_listener *listener, void *data);
     void (*wsland_output_frame)(struct wl_listener *listener, void *data);
-
-    void (*server_destroy_wsland_toplevel)(struct wl_listener *listener, void *data);
 } wsland_adapter_handle;
 
 typedef struct wsland_peer_mouse_event {
@@ -58,10 +58,13 @@ typedef struct wsland_peer_mouse_event {
 
 typedef struct wsland_adapter {
     struct {
+        struct wl_listener wsland_surface_commit;
+        struct wl_listener wsland_window_create;
+        struct wl_listener wsland_window_commit;
+        struct wl_listener wsland_window_destroy;
+
         struct wl_listener wsland_cursor_frame;
         struct wl_listener wsland_output_frame;
-
-        struct wl_listener wsland_toplevel_destroy;
     } events;
 
     wsland_server *server;

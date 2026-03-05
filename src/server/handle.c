@@ -1,6 +1,7 @@
 // ReSharper disable All
 #include <assert.h>
 #include <unistd.h>
+#include <linux/input-event-codes.h>
 #include <wlr/interfaces/wlr_output.h>
 
 #include <wlr/util/edges.h>
@@ -9,13 +10,28 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_xcursor_manager.h>
 
-#include "wsland/adapter.h"
 #include "wsland/server.h"
+#include "wsland/adapter.h"
 #include "wsland/utils/log.h"
 
 
 static void reset_cursor_mode(wsland_server *server) {
+    if (server->cache_cursor.restore) {
+        server->cache_cursor.restore = false;
+
+        if (server->cache_cursor.surface) {
+            wlr_cursor_set_surface(
+                server->cursor,
+                server->cache_cursor.surface,
+                server->cache_cursor.s_hotspot_x,
+                server->cache_cursor.s_hotspot_y
+            );
+        } else {
+            wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "default");
+        }
+    }
     server->move.mode = WSLAND_CURSOR_PASSTHROUGH;
     server->grab.toplevel = NULL;
 }
@@ -23,9 +39,10 @@ static void reset_cursor_mode(wsland_server *server) {
 static void output_frame(struct wl_listener *listener, void *data) {
     wsland_output *output = wl_container_of(listener, output, events.frame);
 
-    if (wlr_scene_output_commit(output->scene_output, NULL)) {
-        wl_signal_emit(&output->server->events.wsland_output_frame, output);
-    }
+
+    wl_signal_emit(&output->server->events.wsland_output_frame, output);
+    /*if (wlr_scene_output_commit(output->scene_output, NULL)) {
+    }*/
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -210,6 +227,8 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
     wsland_toplevel *toplevel = wl_container_of(listener, toplevel, events.map);
     wl_list_insert(&toplevel->server->toplevels, &toplevel->server_link);
     focus_toplevel(toplevel);
+
+    wl_signal_emit(&toplevel->server->events.wsland_window_create, toplevel);
 }
 
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
@@ -219,6 +238,7 @@ static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
         reset_cursor_mode(toplevel->server);
     }
 
+    wl_signal_emit(&toplevel->server->events.wsland_window_destroy, toplevel);
     wl_list_remove(&toplevel->server_link);
 }
 
@@ -227,13 +247,15 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 
     if (toplevel->toplevel->base->initial_commit) {
         wlr_xdg_toplevel_set_size(toplevel->toplevel, 0, 0);
+    } else if (toplevel->toplevel->base->surface->mapped) {
+        wl_signal_emit(&toplevel->server->events.wsland_window_commit, toplevel);
     }
 }
 
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
     wsland_toplevel *toplevel = wl_container_of(listener, toplevel, events.destroy);
 
-    wl_signal_emit(&toplevel->server->events.wsland_toplevel_destroy, toplevel);
+    wl_signal_emit(&toplevel->server->events.wsland_window_destroy, toplevel);
     wl_list_remove(&toplevel->events.map.link);
     wl_list_remove(&toplevel->events.unmap.link);
     wl_list_remove(&toplevel->events.commit.link);
@@ -255,7 +277,7 @@ static void begin_interactive(wsland_toplevel *toplevel, enum wsland_cursor_mode
         server->grab.y = server->cursor->y - toplevel->tree->node.y;
     }
     else {
-        struct wlr_box *geo_box = &toplevel->toplevel->base->geometry;
+        struct wlr_box *geo_box = &toplevel->toplevel->base->current.geometry;
 
         double border_x = toplevel->tree->node.x + geo_box->x + (edges & WLR_EDGE_RIGHT ? geo_box->width : 0);
         double border_y = toplevel->tree->node.y + geo_box->y + (edges & WLR_EDGE_BOTTOM ? geo_box->height : 0);
@@ -285,6 +307,30 @@ static void xdg_toplevel_request_maximize(struct wl_listener *listener, void *da
     wsland_toplevel *toplevel = wl_container_of(listener, toplevel, events.request_maximize);
 
     if (toplevel->toplevel->base->initialized) {
+        struct wlr_output *wlr_output = wlr_output_layout_output_at(
+            toplevel->server->output_layout,
+            toplevel->tree->node.x,
+            toplevel->tree->node.y
+        );
+        if (wlr_output) {
+            wsland_output *output = wlr_output->data;
+
+            if (toplevel->toplevel->current.maximized) {
+                wlr_scene_node_set_position(&toplevel->tree->node, toplevel->before.x, toplevel->before.y);
+                wlr_xdg_toplevel_set_size(toplevel->toplevel, toplevel->before.width, toplevel->before.height);
+            } else {
+                toplevel->before = (struct wlr_box){
+                    toplevel->tree->node.x,
+                    toplevel->tree->node.y,
+                    toplevel->toplevel->base->current.geometry.width,
+                    toplevel->toplevel->base->current.geometry.height,
+                };
+
+                wlr_scene_node_set_position(&toplevel->tree->node, output->monitor.x, output->monitor.y);
+                wlr_xdg_toplevel_set_size(toplevel->toplevel, output->monitor.width, output->monitor.height);
+            }
+            wlr_xdg_toplevel_set_maximized(toplevel->toplevel, !toplevel->toplevel->current.maximized);
+        }
         wlr_xdg_surface_schedule_configure(toplevel->toplevel->base);
     }
 }
@@ -293,8 +339,60 @@ static void xdg_toplevel_request_fullscreen(struct wl_listener *listener, void *
     wsland_toplevel *toplevel = wl_container_of(listener, toplevel, events.request_fullscreen);
 
     if (toplevel->toplevel->base->initialized) {
+        struct wlr_output *wlr_output = wlr_output_layout_output_at(
+            toplevel->server->output_layout,
+            toplevel->tree->node.x,
+            toplevel->tree->node.y
+        );
+        if (wlr_output) {
+            wsland_output *output = wlr_output->data;
+
+            if (toplevel->toplevel->current.fullscreen) {
+                wlr_scene_node_set_position(&toplevel->tree->node, toplevel->before.x, toplevel->before.y);
+                wlr_xdg_toplevel_set_size(toplevel->toplevel, toplevel->before.width, toplevel->before.height);
+            } else {
+                toplevel->before = (struct wlr_box){
+                    toplevel->tree->node.x,
+                    toplevel->tree->node.y,
+                    toplevel->toplevel->base->current.geometry.width,
+                    toplevel->toplevel->base->current.geometry.height,
+                };
+
+                wlr_scene_node_set_position(&toplevel->tree->node, output->monitor.x, output->monitor.y);
+                wlr_xdg_toplevel_set_size(toplevel->toplevel, output->monitor.width, output->monitor.height);
+            }
+            wlr_xdg_toplevel_set_fullscreen(toplevel->toplevel, !toplevel->toplevel->current.fullscreen);
+        }
         wlr_xdg_surface_schedule_configure(toplevel->toplevel->base);
     }
+}
+
+static void wsland_surface_commit(struct wl_listener *listener, void *data) {
+    wsland_surface *surface = wl_container_of(listener, surface, events.commit);
+    wl_signal_emit(&surface->server->events.wsland_surface_commit, surface);
+}
+
+static void surface_destroy(struct wl_listener *listener, void *data) {
+    wsland_surface *surface = wl_container_of(listener, surface, events.destroy);
+
+    wl_list_remove(&surface->events.commit.link);
+    wl_list_remove(&surface->events.destroy.link);
+    free(surface);
+}
+
+static void server_new_surface(struct wl_listener *listener, void *data) {
+    wsland_server *server = wl_container_of(listener, server, events.new_surface);
+
+    wsland_surface *surface = calloc(1, sizeof(*surface));
+    surface->surface = data;
+    surface->server = server;
+    surface->surface->data = surface;
+
+    surface->events.commit.notify = wsland_surface_commit;
+    wl_signal_add(&surface->surface->events.commit, &surface->events.commit);
+
+    surface->events.destroy.notify = surface_destroy;
+    wl_signal_add(&surface->surface->events.destroy, &surface->events.destroy);
 }
 
 static void server_new_xdg_toplevel(struct wl_listener *listener, void *data) {
@@ -350,11 +448,14 @@ static void xdg_popup_destroy(struct wl_listener *listener, void *data) {
 }
 
 static void server_new_xdg_popup(struct wl_listener *listener, void *data) {
+    wsland_server *server = wl_container_of(listener, server, events.new_xdg_popup);
+
     wsland_popup *popup = calloc(1, sizeof(*popup));
     if (!popup) {
         wsland_log(SERVER, ERROR, "failed to allocate wsland_popup");
         return;
     }
+
     popup->popup = data;
 
     struct wlr_xdg_surface *parent = wlr_xdg_surface_try_from_wlr_surface(popup->popup->parent);
@@ -406,6 +507,8 @@ static void process_cursor_move(wsland_server *server) {
         server->cursor->x - server->grab.x,
         server->cursor->y - server->grab.y
     );
+
+    wl_signal_emit(&toplevel->server->events.wsland_window_commit, toplevel);
 }
 
 static void process_cursor_resize(wsland_server *server) {
@@ -442,14 +545,14 @@ static void process_cursor_resize(wsland_server *server) {
         }
     }
 
-    struct wlr_box *geo_box = &toplevel->toplevel->base->geometry;
+    struct wlr_box *geo_box = &toplevel->toplevel->base->current.geometry;
     wlr_scene_node_set_position(
         &toplevel->tree->node,
         new_left - geo_box->x, new_top - geo_box->y
     );
 
-    int min_w = 1 - toplevel->toplevel->base->geometry.x;
-    int min_h = 1 - toplevel->toplevel->base->geometry.y;
+    int min_w = 1 - toplevel->toplevel->base->current.geometry.x;
+    int min_h = 1 - toplevel->toplevel->base->current.geometry.y;
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
@@ -486,31 +589,18 @@ static void process_cursor_motion(wsland_server *server, uint32_t time) {
     }
 }
 
-static void process_cursor_output(wsland_server *server) {
-    struct wlr_output *wlr_output = wlr_output_layout_output_at(
-        server->output_layout, server->cursor->x, server->cursor->y
-    );
-
-    if (!wlr_output) {
-        return;
-    }
-
-    server->cursor_output = wl_container_of(wlr_output, server->cursor_output, output);
-}
-
 static void server_cursor_motion_absolute(struct wl_listener *listener, void *data) {
     wsland_server *server = wl_container_of(listener, server, events.cursor_motion_absolute);
     struct wlr_pointer_motion_absolute_event *event = data;
     wlr_cursor_warp_closest(server->cursor, &event->pointer->base, event->x, event->y);
     process_cursor_motion(server, event->time_msec);
-    process_cursor_output(server);
 }
 
 static void server_cursor_button(struct wl_listener *listener, void *data) {
     wsland_server *server = wl_container_of(listener, server, events.cursor_button);
 
+    bool handled = false;
     struct wlr_pointer_button_event *event = data;
-    wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
         reset_cursor_mode(server);
     }
@@ -521,6 +611,39 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
             server, server->cursor->x, server->cursor->y, &surface, &sx, &sy
         );
         focus_toplevel(toplevel);
+
+        if (toplevel && (event->button == BTN_LEFT || event->button == BTN_RIGHT)) {
+            uint32_t modifiers = wlr_keyboard_get_modifiers(server->seat->keyboard_state.keyboard);
+            if (modifiers & WLR_MODIFIER_ALT) {
+                if (event->button == BTN_LEFT) {
+                    server->cache_cursor.restore = true;
+                    wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "move");
+                    begin_interactive(toplevel, WSLAND_CURSOR_MOVE, 0);
+                    handled = true;
+                } else if (event->button == BTN_RIGHT) {
+                    enum wlr_edges edges = WLR_EDGE_NONE;
+                    if (server->cursor->x < toplevel->window_data->current.x + toplevel->window_data->current.width / 2) {
+                        edges |= WLR_EDGE_LEFT;
+                    } else {
+                        edges |= WLR_EDGE_RIGHT;
+                    }
+                    if (server->cursor->y < toplevel->window_data->current.y + toplevel->window_data->current.height / 2) {
+                        edges |= WLR_EDGE_TOP;
+                    } else {
+                        edges |= WLR_EDGE_BOTTOM;
+                    }
+
+                    server->cache_cursor.restore = true;
+                    wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, wlr_xcursor_get_resize_name(edges));
+                    begin_interactive(toplevel, WSLAND_CURSOR_RESIZE, edges);
+                    handled = true;
+                }
+            }
+        }
+    }
+
+    if (!handled) {
+        wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
     }
 }
 
@@ -540,6 +663,13 @@ static void server_cursor_frame(struct wl_listener *listener, void *data) {
     wl_signal_emit(&server->events.wsland_cursor_frame, server);
 }
 
+static void wsland_cursor_destroy(struct wl_listener *listener, void *data) {
+    wsland_server *server = wl_container_of(listener, server, events.wsland_cursor_destroy);
+
+    server->cache_cursor.surface = NULL;
+    wl_list_remove(&server->events.wsland_cursor_destroy.link);
+}
+
 static void seat_request_cursor(struct wl_listener *listener, void *data) {
     wsland_server *server = wl_container_of(listener, server, events.request_cursor);
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
@@ -547,6 +677,19 @@ static void seat_request_cursor(struct wl_listener *listener, void *data) {
 
     if (focused_client == event->seat_client) {
         wlr_cursor_set_surface(server->cursor, event->surface, event->hotspot_x, event->hotspot_y);
+
+        {
+            if (server->cache_cursor.surface) {
+                server->cache_cursor.surface = NULL;
+                wl_list_remove(&server->events.wsland_cursor_destroy.link);
+            }
+
+            server->cache_cursor.surface = event->surface;
+            server->cache_cursor.s_hotspot_x = event->hotspot_x;
+            server->cache_cursor.s_hotspot_y = event->hotspot_y;
+            server->events.wsland_cursor_destroy.notify = wsland_cursor_destroy;
+            wl_signal_add(&event->surface->events.destroy, &server->events.wsland_cursor_destroy);
+        }
     }
 }
 
@@ -557,6 +700,7 @@ static void seat_request_set_selection(struct wl_listener *listener, void *data)
 wsland_server_handle wsland_server_handle_impl = {
     .server_new_output = server_new_output,
     .server_new_input = server_new_input,
+    .server_new_surface = server_new_surface,
     .server_new_xdg_toplevel = server_new_xdg_toplevel,
     .server_new_xdg_popup = server_new_xdg_popup,
     .server_cursor_motion = server_cursor_motion,

@@ -24,6 +24,9 @@ static UINT rail_client_exec(RailServerContext *context, const RAIL_EXEC_ORDER *
 }
 
 static UINT rail_client_activate(RailServerContext *context, const RAIL_ACTIVATE_ORDER *arg) {
+    wsland_peer *peer = (wsland_peer*)context->custom;
+
+    // peer->handle->rail_client_activate(peer, arg->windowId, arg->enabled);
     return CHANNEL_RC_OK;
 }
 
@@ -88,7 +91,7 @@ bool ctx_rail_init(wsland_peer *peer) {
         return false;
     }
 
-    if (peer->peer->settings->RemoteApplicationSupportLevel & RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED) {
+    if (peer->peer->context->settings->RemoteApplicationSupportLevel & RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED) {
         RAIL_HANDSHAKE_EX_ORDER handshakeEx = {0};
         uint32_t railHandshakeFlags = TS_RAIL_ORDER_HANDSHAKEEX_FLAGS_HIDEF | TS_RAIL_ORDER_HANDSHAKE_EX_FLAGS_EXTENDED_SPI_SUPPORTED;
 

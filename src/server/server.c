@@ -5,6 +5,9 @@
 #include <wlr/render/allocator.h>
 
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_data_device.h>
@@ -128,6 +131,24 @@ wsland_server *wsland_server_create(wsland_config *config) {
         goto create_failed;
     }
 
+    server->viewporter = wlr_viewporter_create(server->display);
+    if (!server->viewporter) {
+        wsland_log(SERVER, ERROR,  "failed to invoke wlr_viewporter_create");
+        goto create_failed;
+    }
+
+    server->server_decoration_manager = wlr_server_decoration_manager_create(server->display);
+    if (!server->server_decoration_manager) {
+        wsland_log(SERVER, ERROR,  "failed to invoke wlr_server_decoration_manager_create");
+        goto create_failed;
+    }
+
+    server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->display);
+    if (!server->xdg_decoration_manager) {
+        wsland_log(SERVER, ERROR,  "failed to invoke wlr_xdg_decoration_manager_v1_create");
+        goto create_failed;
+    }
+
     server->handle = wsland_server_handle_init(server);
     if (!server->handle) {
         wsland_log(SERVER, ERROR, "failed to invoke wsland_server_handle_init");
@@ -141,6 +162,9 @@ wsland_server *wsland_server_create(wsland_config *config) {
 
         server->events.new_input.notify = server->handle->server_new_input;
         wl_signal_add(&server->backend->events.new_input, &server->events.new_input);
+
+        server->events.new_surface.notify = server->handle->server_new_surface;
+        wl_signal_add(&server->compositor->events.new_surface, &server->events.new_surface);
 
         // xdg shell event
         server->events.new_xdg_toplevel.notify = server->handle->server_new_xdg_toplevel;
@@ -184,9 +208,13 @@ wsland_server *wsland_server_create(wsland_config *config) {
     wl_list_init(&server->outputs);
     wl_list_init(&server->keyboards);
     wl_list_init(&server->toplevels);
+    wl_signal_init(&server->events.wsland_surface_commit);
+    wl_signal_init(&server->events.wsland_window_create);
+    wl_signal_init(&server->events.wsland_window_commit);
+    wl_signal_init(&server->events.wsland_window_destroy);
+
     wl_signal_init(&server->events.wsland_cursor_frame);
     wl_signal_init(&server->events.wsland_output_frame);
-    wl_signal_init(&server->events.wsland_toplevel_destroy);
     return server;
 create_failed:
     return NULL;
@@ -200,12 +228,16 @@ void wsland_server_running(wsland_server *server) {
 
 void wsland_server_destroy(wsland_server *server) {
     if (server) {
+        assert(wl_list_empty(&server->events.wsland_window_create.listener_list));
+        assert(wl_list_empty(&server->events.wsland_window_commit.listener_list));
+        assert(wl_list_empty(&server->events.wsland_window_destroy.listener_list));
+
         assert(wl_list_empty(&server->events.wsland_cursor_frame.listener_list));
         assert(wl_list_empty(&server->events.wsland_output_frame.listener_list));
-        assert(wl_list_empty(&server->events.wsland_toplevel_destroy.listener_list));
 
         wl_display_destroy_clients(server->display);
 
+        wl_list_remove(&server->events.new_surface.link);
         wl_list_remove(&server->events.new_xdg_toplevel.link);
         wl_list_remove(&server->events.new_xdg_popup.link);
 

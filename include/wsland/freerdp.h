@@ -2,6 +2,7 @@
 #ifndef WSLAND_FREERDP_H
 #define WSLAND_FREERDP_H
 
+#include <freerdp/freerdp.h>
 #include <freerdp/listener.h>
 #include <freerdp/server/disp.h>
 #include <freerdp/server/rail.h>
@@ -17,6 +18,7 @@
 #define MAX_FREERDP_FDS 32
 #define MAX_FREERDP_KEYS 256
 
+struct wsland_peer;
 struct wsland_adapter;
 
 enum wsland_peer_flags {
@@ -36,6 +38,8 @@ typedef struct wsland_peer_handle {
     BOOL (*xf_input_extended_mouse_event)(rdpInput *input, UINT16 flags, UINT16 x, UINT16 y);
     BOOL (*xf_input_keyboard_event)(rdpInput *input, UINT16 flags, UINT16 code);
     BOOL (*xf_input_unicode_keyboard_event)(rdpInput *input, UINT16 flags, UINT16 code);
+
+    void (*rail_client_activate)(struct wsland_peer *peer, UINT32 window_id, BOOL enabled);
 } wsland_peer_handle;
 
 typedef struct wsland_freerdp {

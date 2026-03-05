@@ -1,3 +1,4 @@
+// ReSharper disable CppDeprecatedEntity
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/channels/channels.h>
 
@@ -82,9 +83,9 @@ static bool rdp_peer_init(wsland_freerdp *freerdp, freerdp_peer *rdp_peer) {
         rdp_peer->settings->RdpKeyContent = strdup(freerdp->key_content);
     }
     else {
-        rdp_peer->settings->TlsSecurity = FALSE;
+        rdp_peer->context->settings->TlsSecurity = FALSE;
     }
-    rdp_peer->settings->NlaSecurity = FALSE;
+    rdp_peer->context->settings->NlaSecurity = FALSE;
 
     if (!rdp_peer->Initialize(rdp_peer)) {
         wsland_log(FREERDP, ERROR, "failed to invoke freerdp peer Initialize");
@@ -92,37 +93,37 @@ static bool rdp_peer_init(wsland_freerdp *freerdp, freerdp_peer *rdp_peer) {
     }
     start = true;
 
-    rdp_peer->settings->ColorDepth = 32;
-    rdp_peer->settings->NSCodec = FALSE;
-    rdp_peer->settings->RemoteFxCodec = FALSE;
-    rdp_peer->settings->OsMajorType = OSMAJORTYPE_UNIX;
-    rdp_peer->settings->OsMinorType = OSMINORTYPE_PSEUDO_XSERVER;
-    rdp_peer->settings->FrameMarkerCommandEnabled = TRUE;
-    rdp_peer->settings->SurfaceFrameMarkerEnabled = TRUE;
-    rdp_peer->settings->RefreshRect = TRUE;
+    rdp_peer->context->settings->ColorDepth = 32;
+    rdp_peer->context->settings->NSCodec = FALSE;
+    rdp_peer->context->settings->RemoteFxCodec = FALSE;
+    rdp_peer->context->settings->OsMajorType = OSMAJORTYPE_UNIX;
+    rdp_peer->context->settings->OsMinorType = OSMINORTYPE_PSEUDO_XSERVER;
+    rdp_peer->context->settings->FrameMarkerCommandEnabled = TRUE;
+    rdp_peer->context->settings->SurfaceFrameMarkerEnabled = TRUE;
+    rdp_peer->context->settings->RefreshRect = TRUE;
 
     UINT32 remote_application_level = RAIL_LEVEL_SUPPORTED |
         RAIL_LEVEL_SHELL_INTEGRATION_SUPPORTED |
         RAIL_LEVEL_LANGUAGE_IME_SYNC_SUPPORTED |
         RAIL_LEVEL_SERVER_TO_CLIENT_IME_SYNC_SUPPORTED |
         RAIL_LEVEL_HANDSHAKE_EX_SUPPORTED;
-    rdp_peer->settings->RemoteApplicationSupportLevel = remote_application_level;
-    rdp_peer->settings->SupportGraphicsPipeline = TRUE;
-    rdp_peer->settings->SupportMonitorLayoutPdu = TRUE;
-    rdp_peer->settings->RemoteApplicationMode = TRUE;
+    rdp_peer->context->settings->RemoteApplicationSupportLevel = remote_application_level;
+    rdp_peer->context->settings->SupportGraphicsPipeline = TRUE;
+    rdp_peer->context->settings->SupportMonitorLayoutPdu = TRUE;
+    rdp_peer->context->settings->RemoteApplicationMode = TRUE;
 
     rdp_peer->AdjustMonitorsLayout = peer->handle->xf_peer_adjust_monitor_layout;
     rdp_peer->Capabilities = peer->handle->xf_peer_capabilities;
     rdp_peer->PostConnect = peer->handle->xf_peer_post_connect;
     rdp_peer->Activate = peer->handle->xf_peer_activate;
 
-    rdp_peer->update->SuppressOutput = peer->handle->xf_suppress_output;
+    rdp_peer->context->update->SuppressOutput = peer->handle->xf_suppress_output;
 
-    rdp_peer->input->SynchronizeEvent = peer->handle->xf_input_synchronize_event;
-    rdp_peer->input->MouseEvent = peer->handle->xf_input_mouse_event;
-    rdp_peer->input->ExtendedMouseEvent = peer->handle->xf_input_extended_mouse_event;
-    rdp_peer->input->KeyboardEvent = peer->handle->xf_input_keyboard_event;
-    rdp_peer->input->UnicodeKeyboardEvent = peer->handle->xf_input_unicode_keyboard_event;
+    rdp_peer->context->input->SynchronizeEvent = peer->handle->xf_input_synchronize_event;
+    rdp_peer->context->input->MouseEvent = peer->handle->xf_input_mouse_event;
+    rdp_peer->context->input->ExtendedMouseEvent = peer->handle->xf_input_extended_mouse_event;
+    rdp_peer->context->input->KeyboardEvent = peer->handle->xf_input_keyboard_event;
+    rdp_peer->context->input->UnicodeKeyboardEvent = peer->handle->xf_input_unicode_keyboard_event;
 
     HANDLE handles[MAX_FREERDP_FDS + 1];
     int handle_count = rdp_peer->GetEventHandles(rdp_peer, handles, MAX_FREERDP_FDS);

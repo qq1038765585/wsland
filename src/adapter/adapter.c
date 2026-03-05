@@ -47,6 +47,7 @@ void wsland_adapter_create_output_for_peer(wsland_peer *peer, rdpMonitor *monito
         return;
     }
 
+    output->primary = monitor->is_primary;
     output->monitor = (struct wlr_box){monitor->x, monitor->y, monitor->width, monitor->height};
     wl_list_insert(&peer->outputs, &output->peer_link);
 }
@@ -67,14 +68,23 @@ wsland_adapter* wsland_adapter_create(wsland_server *server) {
     }
 
     {
+        adapter->events.wsland_surface_commit.notify = adapter->handle->wsland_surface_commit;
+        wl_signal_add(&server->events.wsland_surface_commit, &adapter->events.wsland_surface_commit);
+
+        adapter->events.wsland_window_create.notify = adapter->handle->wsland_window_create;
+        wl_signal_add(&server->events.wsland_window_create, &adapter->events.wsland_window_create);
+
+        adapter->events.wsland_window_commit.notify = adapter->handle->wsland_window_commit;
+        wl_signal_add(&server->events.wsland_window_commit, &adapter->events.wsland_window_commit);
+
+        adapter->events.wsland_window_destroy.notify = adapter->handle->wsland_window_destroy;
+        wl_signal_add(&server->events.wsland_window_destroy, &adapter->events.wsland_window_destroy);
+
         adapter->events.wsland_cursor_frame.notify = adapter->handle->wsland_cursor_frame;
         wl_signal_add(&server->events.wsland_cursor_frame, &adapter->events.wsland_cursor_frame);
 
         adapter->events.wsland_output_frame.notify = adapter->handle->wsland_output_frame;
         wl_signal_add(&server->events.wsland_output_frame, &adapter->events.wsland_output_frame);
-
-        adapter->events.wsland_toplevel_destroy.notify = adapter->handle->server_destroy_wsland_toplevel;
-        wl_signal_add(&server->events.wsland_toplevel_destroy, &adapter->events.wsland_toplevel_destroy);
     }
     return adapter;
 
@@ -85,9 +95,13 @@ create_failed:
 
 void wsland_adapter_destroy(wsland_adapter *adapter) {
     if (adapter) {
+        wl_list_remove(&adapter->events.wsland_surface_commit.link);
+        wl_list_remove(&adapter->events.wsland_window_create.link);
+        wl_list_remove(&adapter->events.wsland_window_commit.link);
+        wl_list_remove(&adapter->events.wsland_window_destroy.link);
+
         wl_list_remove(&adapter->events.wsland_cursor_frame.link);
         wl_list_remove(&adapter->events.wsland_output_frame.link);
-        wl_list_remove(&adapter->events.wsland_toplevel_destroy.link);
         free(adapter);
     }
 }
