@@ -1,3 +1,5 @@
+#include "wlr/xwayland/server.h"
+
 #include <assert.h>
 #include <stdlib.h>
 
@@ -14,6 +16,8 @@
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_cursor.h>
+
+#include <wlr/xwayland/xwayland.h>
 
 #include "wsland/server.h"
 #include "wsland/utils/log.h"
@@ -149,6 +153,12 @@ wsland_server *wsland_server_create(wsland_config *config) {
         goto create_failed;
     }
 
+    server->xwayland = wlr_xwayland_create(server->display, server->compositor, true);
+    if (!server->xwayland) {
+        wsland_log(SERVER, ERROR,  "failed to invoke wlr_xwayland_create");
+        goto create_failed;
+    }
+
     server->handle = wsland_server_handle_init(server);
     if (!server->handle) {
         wsland_log(SERVER, ERROR, "failed to invoke wsland_server_handle_init");
@@ -162,9 +172,6 @@ wsland_server *wsland_server_create(wsland_config *config) {
 
         server->events.new_input.notify = server->handle->server_new_input;
         wl_signal_add(&server->backend->events.new_input, &server->events.new_input);
-
-        server->events.new_surface.notify = server->handle->server_new_surface;
-        wl_signal_add(&server->compositor->events.new_surface, &server->events.new_surface);
 
         // xdg shell event
         server->events.new_xdg_toplevel.notify = server->handle->server_new_xdg_toplevel;
@@ -192,6 +199,12 @@ wsland_server *wsland_server_create(wsland_config *config) {
         wl_signal_add(&server->seat->events.request_set_cursor, &server->events.request_cursor);
         server->events.request_set_selection.notify = server->handle->seat_request_set_selection;
         wl_signal_add(&server->seat->events.request_set_selection, &server->events.request_set_selection);
+
+        // xwayland event
+        wlr_xwayland_set_seat(server->xwayland, server->seat);
+
+        server->events.wsland_xwayland_new_surface.notify = server->handle->wsland_xwayland_new_surface;
+        wl_signal_add(&server->xwayland->events.new_surface, &server->events.wsland_xwayland_new_surface);
     }
 
     server->socket_name = wl_display_add_socket_auto(server->display);
@@ -208,9 +221,7 @@ wsland_server *wsland_server_create(wsland_config *config) {
     wl_list_init(&server->outputs);
     wl_list_init(&server->keyboards);
     wl_list_init(&server->toplevels);
-    wl_signal_init(&server->events.wsland_surface_commit);
-    wl_signal_init(&server->events.wsland_window_create);
-    wl_signal_init(&server->events.wsland_window_commit);
+    wl_signal_init(&server->events.wsland_window_motion);
     wl_signal_init(&server->events.wsland_window_destroy);
 
     wl_signal_init(&server->events.wsland_cursor_frame);
@@ -221,15 +232,15 @@ create_failed:
 }
 
 void wsland_server_running(wsland_server *server) {
+    setenv("DISPLAY", server->xwayland->display_name, true);
     setenv("WAYLAND_DISPLAY", server->socket_name, true);
-    wsland_log(SERVER, INFO, "running wayland compositor [ WAYLAND_DISPLAY=%s ]", server->socket_name);
+    wsland_log(SERVER, INFO, "running wayland compositor [ DISPLAY=%s, WAYLAND_DISPLAY=%s ]", server->xwayland->display_name, server->socket_name);
     wl_display_run(server->display);
 }
 
 void wsland_server_destroy(wsland_server *server) {
     if (server) {
-        assert(wl_list_empty(&server->events.wsland_window_create.listener_list));
-        assert(wl_list_empty(&server->events.wsland_window_commit.listener_list));
+        assert(wl_list_empty(&server->events.wsland_window_motion.listener_list));
         assert(wl_list_empty(&server->events.wsland_window_destroy.listener_list));
 
         assert(wl_list_empty(&server->events.wsland_cursor_frame.listener_list));
@@ -237,7 +248,6 @@ void wsland_server_destroy(wsland_server *server) {
 
         wl_display_destroy_clients(server->display);
 
-        wl_list_remove(&server->events.new_surface.link);
         wl_list_remove(&server->events.new_xdg_toplevel.link);
         wl_list_remove(&server->events.new_xdg_popup.link);
 

@@ -41,7 +41,7 @@ static void wsland_signal_system_init(wsland_signal_system *signal) {
     wl_event_loop_add_signal(signal->server->event_loop, SIGINT, terminate_signal, signal);
 
     struct sigaction sa_ign = { .sa_handler = SIG_IGN };
-    sigaction(SIGCHLD, &sa_ign, NULL);
+    // sigaction(SIGCHLD, &sa_ign, NULL);
     sigaction(SIGPIPE, &sa_ign, NULL);
 
     pthread_atfork(NULL, NULL, restore_signals);

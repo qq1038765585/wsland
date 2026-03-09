@@ -61,7 +61,14 @@ add_project_arguments(cc.get_supported_arguments([
  '-Wno-unused-parameter',
 ]), language: 'c')
 
-dep_wlroots = dependency('wlroots-0.18', version : '>=0.18.3', fallback: 'wlroots')
+wlroots_project = subproject(
+    'wlroots',
+    default_options: [
+        'xwayland=enabled'
+    ]
+)
+
+dep_wlroots = wlroots_project.get_variable('wlroots') # dependency('wlroots-0.18', version : '>=0.18.3', fallback: 'wlroots')
 dep_winpr = dependency('winpr2', version : '>=2.4.0')
 dep_freerdp = dependency('freerdp2', version : '>=2.4.0')
 dep_freerdp_server = dependency('freerdp-server2', version : '>=2.4.0')
@@ -70,6 +77,8 @@ dep_wayland_server = dependency('wayland-server', version : '>= 1.24.0')
 dep_xkbcommon = dependency('xkbcommon', version : '>=1.11.0')
 dep_openssl = dependency('openssl', version: '>= 1.1.1')
 dep_pixman = dependency('pixman-1', version : '>=0.46.4')
+dep_xcb = dependency('xcb', version : '>=1.17.0')
+dep_xwayland = dependency('xwayland', version : '>=1.17.0')
 def_cairo = dependency('cairo', required: false, disabler: true)
 
 wayland_kwargs = {
@@ -86,5 +95,5 @@ subdir('protocol')
 
 executable('wsland', [sources, protocols_server_header['xdg-shell']], include_directories : [include_dir], dependencies : [
     dep_wlroots, dep_winpr, dep_freerdp, dep_rdpapplist, dep_freerdp_server, dep_wayland_server,
-    dep_pixman, def_cairo, dep_openssl, dep_xkbcommon,
+    dep_pixman, def_cairo, dep_openssl, dep_xkbcommon, dep_xcb, dep_xwayland
 ])

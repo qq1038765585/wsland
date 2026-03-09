@@ -13,12 +13,6 @@ typedef struct wsland_cursor_data {
     void *data; uint32_t *format; size_t *stride;
 } wsland_cursor_data;
 
-typedef struct wsland_peer_data {
-    wsland_peer *peer;
-    uint32_t window_id;
-    bool activated;
-} wsland_peer_data;
-
 typedef struct wsland_window {
     uint32_t parent_id;
     uint32_t window_id;
@@ -26,7 +20,6 @@ typedef struct wsland_window {
 
     bool dirty;
     bool opaque;
-    bool move;
 
     char *title;
     int scale_w, scale_h;
@@ -37,14 +30,15 @@ typedef struct wsland_window {
 
 void wsland_adapter_destroy_window(wsland_toplevel *toplevel);
 
+void wsland_adapter_activate_for_peer(wsland_peer *peer, uint32_t window_id, bool enabled);
+void wsland_adapter_work_area_for_peer(wsland_peer *peer, struct wlr_box area);
+void wsland_adapter_taskbar_area_for_peer(wsland_peer *peer, struct wlr_box area);
 void wsland_adapter_create_keyboard_for_peer(wsland_peer *peer, rdpSettings *settings);
 void wsland_adapter_create_output_for_peer(wsland_peer *peer, rdpMonitor *monitor);
 
 
 typedef struct wsland_adapter_handle {
-    void (*wsland_surface_commit)(struct wl_listener *listener, void *data);
-    void (*wsland_window_create)(struct wl_listener *listener, void *data);
-    void (*wsland_window_commit)(struct wl_listener *listener, void *data);
+    void (*wsland_window_motion)(struct wl_listener *listener, void *data);
     void (*wsland_window_destroy)(struct wl_listener *listener, void *data);
 
     void (*wsland_cursor_frame)(struct wl_listener *listener, void *data);
@@ -58,9 +52,7 @@ typedef struct wsland_peer_mouse_event {
 
 typedef struct wsland_adapter {
     struct {
-        struct wl_listener wsland_surface_commit;
-        struct wl_listener wsland_window_create;
-        struct wl_listener wsland_window_commit;
+        struct wl_listener wsland_window_motion;
         struct wl_listener wsland_window_destroy;
 
         struct wl_listener wsland_cursor_frame;

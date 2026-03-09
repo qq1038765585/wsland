@@ -300,31 +300,28 @@ static BOOL xf_input_unicode_keyboard_event(rdpInput *input, UINT16 flags, UINT1
     return TRUE;
 }
 
-static void do_rail_client_activate(void *user_data) {
-    wsland_peer_data *data = user_data;
-
-    wsland_toplevel *toplevel;
-    wl_list_for_each(toplevel, &data->peer->freerdp->adapter->server->toplevels, server_link) {
-        wsland_window *window = toplevel->window_data;
-
-        if (window && window->window_id == data->window_id) {
-            wlr_xdg_toplevel_set_activated(toplevel->toplevel, data->activated);
-
-            if (!data->activated) {
-                wlr_seat_keyboard_notify_clear_focus(toplevel->server->seat);
-            }
-        }
-    }
-    free(data);
+static void rail_client_activate(wsland_peer *peer, const RAIL_ACTIVATE_ORDER *arg) {
+    wsland_adapter_activate_for_peer(peer, arg->windowId, arg->enabled);
 }
 
-static void rail_client_activate(wsland_peer *peer, UINT32 window_id, BOOL enabled) {
-    wsland_peer_data *data = malloc(sizeof(*data));
-    data->window_id = window_id;
-    data->activated = enabled;
-    data->peer = peer;
+static void rail_client_sysparam(wsland_peer *peer, const RAIL_SYSPARAM_ORDER *args) {
+    if (args->params & SPI_MASK_SET_WORK_AREA) {
+        wsland_adapter_work_area_for_peer(peer, (struct wlr_box){
+            .x = args->workArea.left,
+            .y = args->workArea.top,
+            .width = args->workArea.right - args->workArea.left,
+            .height = args->workArea.bottom - args->workArea.top
+        });
+    }
 
-    wl_event_loop_add_idle(peer->freerdp->adapter->server->event_loop, do_rail_client_activate, data);
+    if (args->params & SPI_MASK_TASKBAR_POS) {
+        wsland_adapter_taskbar_area_for_peer(peer, (struct wlr_box){
+            .x = args->workArea.left,
+            .y = args->workArea.top,
+            .width = args->workArea.right - args->workArea.left,
+            .height = args->workArea.bottom - args->workArea.top
+        });
+    }
 }
 
 wsland_peer_handle wsland_peer_handle_impl = {
@@ -341,6 +338,7 @@ wsland_peer_handle wsland_peer_handle_impl = {
     .xf_input_unicode_keyboard_event = xf_input_unicode_keyboard_event,
 
     .rail_client_activate = rail_client_activate,
+    .rail_client_sysparam = rail_client_sysparam,
 };
 
 void wsland_peer_handle_init(wsland_peer *peer) {

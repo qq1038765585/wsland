@@ -39,7 +39,8 @@ typedef struct wsland_peer_handle {
     BOOL (*xf_input_keyboard_event)(rdpInput *input, UINT16 flags, UINT16 code);
     BOOL (*xf_input_unicode_keyboard_event)(rdpInput *input, UINT16 flags, UINT16 code);
 
-    void (*rail_client_activate)(struct wsland_peer *peer, UINT32 window_id, BOOL enabled);
+    void (*rail_client_activate)(struct wsland_peer *peer, const RAIL_ACTIVATE_ORDER *arg);
+    void (*rail_client_sysparam)(struct wsland_peer *peer, const RAIL_SYSPARAM_ORDER *arg);
 } wsland_peer_handle;
 
 typedef struct wsland_freerdp {

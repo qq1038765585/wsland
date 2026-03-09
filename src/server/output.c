@@ -103,7 +103,7 @@ static void output_destroy(struct wlr_output *wlr_output) {
     wsland_output *output = wsland_output_from_output(wlr_output);
 
     wlr_pointer_finish(&output->pointer);
-    wlr_output_destroy(wlr_output);
+    // wlr_output_destroy(wlr_output);
 
     wl_list_remove(&output->peer_link);
     wl_list_remove(&output->server_link);
@@ -130,7 +130,7 @@ bool wlr_output_is_wsland(struct wlr_output *wlr_output) {
     return wlr_output->impl == &wsland_output_impl;
 }
 
-wsland_output *wsland_output_create(wsland_server *server, struct wlr_output_mode *mode) {
+wsland_output *wsland_output_create(wsland_server *server, int width, int height) {
     wsland_output *output = calloc(1, sizeof(*output));
     if (!output) {
         wsland_log(SERVER, ERROR, "failed to allocate wsland_output");
@@ -139,7 +139,7 @@ wsland_output *wsland_output_create(wsland_server *server, struct wlr_output_mod
 
     struct wlr_output_state state;
     wlr_output_state_init(&state);
-    wlr_output_state_set_mode(&state, mode);
+    wlr_output_state_set_custom_mode(&state, width, height, WSLAND_DEFAULT_REFRESH);
 
     wlr_output_init(&output->output, server->backend, &wsland_output_impl, server->event_loop, &state);
     wlr_output_state_finish(&state);

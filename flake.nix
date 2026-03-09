@@ -29,7 +29,8 @@
             ];
 
             buildInputs = with pkgs; [
-              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo libxkbcommon libdrm openssl
+              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo
+              libxcb libxcb-wm libxkbcommon libdrm xwayland openssl
             ];
           };
       });
@@ -43,7 +44,8 @@
         default = pkgs.mkShell {
             packages = with pkgs; [
               pkg-config meson ninja
-              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo libxkbcommon libdrm openssl
+              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo
+              libxcb libxcb-wm libxkbcommon libdrm xwayland openssl
             ];
 
             LD_LIBRARY_PATH = "${wslgFreerdpLib}/lib";

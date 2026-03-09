@@ -26,7 +26,7 @@ static UINT rail_client_exec(RailServerContext *context, const RAIL_EXEC_ORDER *
 static UINT rail_client_activate(RailServerContext *context, const RAIL_ACTIVATE_ORDER *arg) {
     wsland_peer *peer = (wsland_peer*)context->custom;
 
-    // peer->handle->rail_client_activate(peer, arg->windowId, arg->enabled);
+    peer->handle->rail_client_activate(peer, arg);
     return CHANNEL_RC_OK;
 }
 
@@ -39,6 +39,9 @@ static UINT rail_client_sysmenu(RailServerContext *context, const RAIL_SYSMENU_O
 }
 
 static UINT rail_rail_client_sysparam(RailServerContext *context, const RAIL_SYSPARAM_ORDER *arg) {
+    wsland_peer *peer = (wsland_peer*)context->custom;
+
+    peer->handle->rail_client_sysparam(peer, arg);
     return CHANNEL_RC_OK;
 }
 
