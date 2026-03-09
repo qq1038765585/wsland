@@ -4,8 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
-    wslg-app.url = "path:/home/pp/workspace/wslg";
-    wslg-freerdp.url = "path:/home/pp/workspace/wslg/vendor/FreeRDP";
+    wslg-app.url = "github:qq1038765585/wslg-flake/main";
+    wslg-freerdp.url = "github:qq1038765585/freerdp-flake/working";
   };
 
   outputs = { self, nixpkgs, wslg-app, wslg-freerdp }:
