@@ -23,7 +23,7 @@ static wsland_output * wsland_output_from_output(struct wlr_output *wlr_output) 
     return output;
 }
 
-static void output_update_refresh(wsland_output *output, int32_t refresh) {
+void output_update_refresh(wsland_output *output, int32_t refresh) {
     if (refresh <= 0) {
         refresh = WSLAND_DEFAULT_REFRESH;
     }

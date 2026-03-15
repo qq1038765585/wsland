@@ -20,18 +20,16 @@ typedef struct wsland_frame_buffer {
 typedef struct wsland_window {
     enum adapter_type type;
     struct wlr_scene_tree *tree;
+    struct wlr_swapchain *swapchain;
+    struct wlr_scene_surface *surface;
 
     uint32_t window_id;
     uint32_t parent_id;
     uint32_t surface_id;
     struct wlr_box before;
     struct wlr_box current;
-    struct wlr_buffer *buffer;
-    pixman_region32_t damage;
     int scale_w, scale_h;
     char *title;
-
-    bool dirty;
 
     union {
         struct wlr_xdg_toplevel *wayland;
@@ -44,11 +42,14 @@ typedef struct wsland_window {
         struct wl_listener commit;
         struct wl_listener destroy;
         struct wl_listener associate; // for xwayland
+        struct wl_listener dissociate; // for xwayland
 
         struct wl_listener request_move;
         struct wl_listener request_resize;
         struct wl_listener request_maximize;
         struct wl_listener request_fullscreen;
+        struct wl_listener request_configure;
+        struct wl_listener request_activate;
     } events;
 
     struct wl_list server_link;
@@ -68,7 +69,6 @@ typedef struct wsland_cursor {
 } wsland_cursor;
 
 
-void wsland_adapter_activate_for_peer(wsland_peer *peer, uint32_t window_id, bool enabled);
 void wsland_adapter_work_area_for_peer(wsland_peer *peer, struct wlr_box area);
 void wsland_adapter_taskbar_area_for_peer(wsland_peer *peer, struct wlr_box area);
 void wsland_adapter_create_keyboard_for_peer(wsland_peer *peer, rdpSettings *settings);

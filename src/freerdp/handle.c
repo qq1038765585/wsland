@@ -1,4 +1,7 @@
 // ReSharper disable All
+#include <unistd.h>
+#include <pthread.h>
+#include <sys/eventfd.h>
 #include <linux/input-event-codes.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_scene.h>
@@ -25,6 +28,79 @@ static bool accumulate_axis(wsland_peer *peer, UINT16 flags, enum wl_pointer_axi
     *delta = wheel_delta * 15;
     *delta_discrete = wheel_delta * WLR_POINTER_AXIS_DISCRETE_STEP;
     return true;
+}
+
+static void rail_sync_window_state(wsland_peer *peer) {
+    {
+        RAIL_SYSPARAM_ORDER sysParamOrder = {
+            .param = SPI_SETSCREENSAVESECURE,
+            .setScreenSaveSecure = 0,
+        };
+        peer->ctx_server_rail->ServerSysparam(peer->ctx_server_rail, &sysParamOrder);
+        peer->peer->DrainOutputBuffer(peer->peer);
+    }
+
+    {
+        RAIL_SYSPARAM_ORDER sysParamOrder = {
+            .param = SPI_SETSCREENSAVEACTIVE,
+            .setScreenSaveActive = 0,
+        };
+        peer->ctx_server_rail->ServerSysparam(peer->ctx_server_rail, &sysParamOrder);
+        peer->peer->DrainOutputBuffer(peer->peer);
+    }
+
+    {
+        RAIL_ZORDER_SYNC zOrderSync = {
+            .windowIdMarker = RAIL_MARKER_WINDOW_ID,
+        };
+        peer->ctx_server_rail->ServerZOrderSync(peer->ctx_server_rail, &zOrderSync);
+        peer->peer->DrainOutputBuffer(peer->peer);
+    }
+
+    {
+        WINDOW_ORDER_INFO window_order_info = {
+            .windowId = RAIL_MARKER_WINDOW_ID,
+            .fieldFlags = WINDOW_ORDER_TYPE_DESKTOP | WINDOW_ORDER_FIELD_DESKTOP_HOOKED | WINDOW_ORDER_FIELD_DESKTOP_ARC_BEGAN,
+        };
+
+        MONITORED_DESKTOP_ORDER monitored_desktop_order = {0};
+        peer->peer->update->window->MonitoredDesktop(
+            peer->peer->update->context, &window_order_info, &monitored_desktop_order
+        );
+        peer->peer->DrainOutputBuffer(peer->peer);
+    }
+
+    {
+        uint32_t windowsIdArray[1] = {0};
+        WINDOW_ORDER_INFO window_order_info = {
+            .windowId = RAIL_MARKER_WINDOW_ID,
+            .fieldFlags = WINDOW_ORDER_TYPE_DESKTOP | WINDOW_ORDER_FIELD_DESKTOP_ZORDER | WINDOW_ORDER_FIELD_DESKTOP_ACTIVE_WND,
+        };
+        windowsIdArray[0] = RAIL_MARKER_WINDOW_ID;
+
+        MONITORED_DESKTOP_ORDER monitored_desktop_order = {
+            .activeWindowId = RAIL_DESKTOP_WINDOW_ID,
+            .numWindowIds = 1, .windowIds = (UINT *)&windowsIdArray,
+        };
+
+        peer->peer->update->window->MonitoredDesktop(
+            peer->peer->update->context, &window_order_info, &monitored_desktop_order
+        );
+        peer->peer->DrainOutputBuffer(peer->peer);
+    }
+
+    {
+        WINDOW_ORDER_INFO window_order_info = {
+            .windowId = RAIL_MARKER_WINDOW_ID,
+            .fieldFlags = WINDOW_ORDER_TYPE_DESKTOP | WINDOW_ORDER_FIELD_DESKTOP_ARC_COMPLETED,
+        };
+
+        MONITORED_DESKTOP_ORDER monitored_desktop_order = {0};
+        peer->peer->update->window->MonitoredDesktop(
+            peer->peer->update->context, &window_order_info, &monitored_desktop_order
+        );
+        peer->peer->DrainOutputBuffer(peer->peer);
+    }
 }
 
 static bool rail_peer_init(wsland_peer *peer) {
@@ -114,6 +190,7 @@ static BOOL xf_peer_activate(freerdp_peer *rdp_peer) {
         return FALSE;
     }
 
+    rail_sync_window_state(peer);
     if (peer->flags & WSLAND_PEER_ACTIVATED) {
         return TRUE;
     }
@@ -151,6 +228,25 @@ static BOOL xf_suppress_output(rdpContext *context, BYTE allow, const RECTANGLE_
 }
 
 static BOOL xf_input_synchronize_event(rdpInput *input, UINT32 flags) {
+    wsland_peer *peer = (wsland_peer*)input->context;
+    wsland_keyboard *keyboard = peer->keyboard;
+
+    /*struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    for (int idx = 0; idx < MAX_FREERDP_KEYS; idx++) {
+        if (peer->pressed[idx]) {
+            peer->pressed[idx] = false;
+
+            struct wlr_keyboard_key_event event = {0};
+            event.time_msec = timespec_to_msec(&now);
+            event.state = WL_KEYBOARD_KEY_STATE_RELEASED;
+            event.update_state = true;
+            event.keycode = idx;
+            wlr_keyboard_notify_key(&keyboard->keyboard, &event);
+        }
+    }*/
+
     return TRUE;
 }
 
@@ -300,40 +396,71 @@ static BOOL xf_input_unicode_keyboard_event(rdpInput *input, UINT16 flags, UINT1
     return TRUE;
 }
 
-static void rail_client_activate(wsland_peer *peer, const RAIL_ACTIVATE_ORDER *arg) {
-    wsland_adapter_activate_for_peer(peer, arg->windowId, arg->enabled);
-}
+static void rail_client_activate(bool free_only, void *user_data) {
+    dispatch_data *data = wl_container_of(user_data, data, task);
 
-static void rail_client_sysparam(wsland_peer *peer, const RAIL_SYSPARAM_ORDER *args) {
-    if (args->params & SPI_MASK_SET_WORK_AREA) {
-        wsland_adapter_work_area_for_peer(peer, (struct wlr_box){
-            .x = args->workArea.left,
-            .y = args->workArea.top,
-            .width = args->workArea.right - args->workArea.left,
-            .height = args->workArea.bottom - args->workArea.top
-        });
-    }
+    if (!free_only) {
+        wsland_server *server = data->peer->freerdp->adapter->server;
 
-    if (args->params & SPI_MASK_TASKBAR_POS) {
-        wsland_adapter_taskbar_area_for_peer(peer, (struct wlr_box){
-            .x = args->workArea.left,
-            .y = args->workArea.top,
-            .width = args->workArea.right - args->workArea.left,
-            .height = args->workArea.bottom - args->workArea.top
-        });
-    }
-}
-
-static void rdpgfx_frame_acknowledge(wsland_peer *peer) {
-    wsland_frame_buffer *frame_buffer, *temp;
-    wl_list_for_each_safe(frame_buffer, temp, &peer->freerdp->adapter->buffers, link) {
-        if (frame_buffer->frame_id <= peer->acknowledged_frame_id) {
-            wl_list_remove(&frame_buffer->link);
-            free(frame_buffer->alpha);
-            free(frame_buffer->ptr);
-            free(frame_buffer);
+        wsland_window *window;
+        wl_list_for_each(window, &server->windows, server_link) {
+            if (window && window->window_id == data->activate.windowId) {
+                if (data->activate.enabled) {
+                    window->server->handle->dispatch_window_focus(window);
+                } else {
+                    window->handle->window_activate(window, data->activate.enabled);
+                }
+            }
         }
     }
+
+    free(data);
+}
+
+static void rail_client_sysparam(bool free_only, void *user_data) {
+    dispatch_data *data = wl_container_of(user_data, data, task);
+
+    if (!free_only) {
+        if (data->sysparam.params & SPI_MASK_SET_WORK_AREA) {
+            wsland_adapter_work_area_for_peer(data->peer, (struct wlr_box){
+                .x = data->sysparam.workArea.left,
+                .y = data->sysparam.workArea.top,
+                .width = data->sysparam.workArea.right - data->sysparam.workArea.left,
+                .height = data->sysparam.workArea.bottom - data->sysparam.workArea.top
+            });
+        }
+
+        if (data->sysparam.params & SPI_MASK_TASKBAR_POS) {
+            wsland_adapter_taskbar_area_for_peer(data->peer, (struct wlr_box){
+                .x = data->sysparam.workArea.left,
+                .y = data->sysparam.workArea.top,
+                .width = data->sysparam.workArea.right - data->sysparam.workArea.left,
+                .height = data->sysparam.workArea.bottom - data->sysparam.workArea.top
+            });
+        }
+    }
+
+    free(data);
+}
+
+static void rdpgfx_frame_acknowledge(bool free_only, void *user_data) {
+    dispatch_data *data = wl_container_of(user_data, data, task);
+
+    if (!free_only) {
+        data->peer->acknowledged_frame_id = data->frame_acknowledge.frameId;
+
+        wsland_frame_buffer *frame_buffer, *temp;
+        wl_list_for_each_safe(frame_buffer, temp, &data->peer->freerdp->adapter->buffers, link) {
+            if (frame_buffer->frame_id <= data->peer->acknowledged_frame_id) {
+                wl_list_remove(&frame_buffer->link);
+                free(frame_buffer->alpha);
+                free(frame_buffer->ptr);
+                free(frame_buffer);
+            }
+        }
+    }
+
+    free(data);
 }
 
 wsland_peer_handle wsland_peer_handle_impl = {

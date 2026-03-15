@@ -88,8 +88,7 @@ static void scene_buffer_set_texture(struct wlr_scene_buffer *scene_buffer, stru
     scene_buffer->texture = texture;
 
     if (texture != NULL) {
-        scene_buffer->renderer_destroy.notify = scene_buffer_handle_renderer_destroy;
-        wl_signal_add(&texture->renderer->events.destroy, &scene_buffer->renderer_destroy);
+        LISTEN(&texture->renderer->events.destroy, &scene_buffer->renderer_destroy, scene_buffer_handle_renderer_destroy);
     } else {
         wl_list_init(&scene_buffer->renderer_destroy.link);
     }
@@ -119,9 +118,17 @@ static struct wlr_texture *scene_buffer_get_texture(struct wlr_scene_buffer *sce
     return texture;
 }
 
+struct render_node {
+    wsland_window *window;
+    struct wlr_box box;
+
+    uint8_t *data;
+    int data_size, bpp;
+};
+
 struct detection_node {
-    struct wlr_scene_buffer *scene_buffer;
-    int sx, sy;
+    struct wlr_scene_buffer *buffer;
+    int sx, sy, width, height;
 };
 
 struct detection_data {
@@ -129,7 +136,7 @@ struct detection_data {
     struct wlr_box pending;
     struct wl_array nodes;
 
-    bool create, update, offset, resize, title, damage;
+    bool create, update, offset, resize, parent, title, damage;
 
     wsland_output *output;
     wsland_adapter *adapter;
@@ -138,28 +145,36 @@ struct detection_data {
 
 static void collect_region(struct wlr_scene_buffer *buffer, int sx, int sy, void *user_data) {
     pixman_region32_t *region = user_data;
-    pixman_region32_union(region, region, &buffer->node.visible);
+
+    int width, height;
+    scene_node_get_size(&buffer->node, &width, &height);
+    pixman_region32_union_rect(region, region, sx, sy, width, height);
 }
 
 static void collect_detection(struct wlr_scene_buffer *scene_buffer, int sx, int sy, void *user_data) {
     struct detection_data *data = user_data;
 
-    if (!data->damage) {
-        pixman_region32_t mix_damage;
-        pixman_region32_init(&mix_damage);
-        pixman_region32_intersect(&mix_damage, &scene_buffer->node.visible, &data->output->pending_commit_damage);
-        if (pixman_region32_not_empty(&mix_damage)) {
-            data->damage = true;
-        }
-        pixman_region32_fini(&mix_damage);
-    }
+    int width, height;
+    scene_node_get_size(&scene_buffer->node, &width, &height);
 
     struct detection_node *node = wl_array_add(&data->nodes, sizeof(*node));
-    node->scene_buffer = scene_buffer;
+    node->buffer = scene_buffer;
+    node->height = height;
+    node->width = width;
     node->sx = sx;
     node->sy = sy;
 
-    pixman_region32_union(&data->region, &data->region, &scene_buffer->node.visible);
+    pixman_region32_t mix_damage;
+    pixman_region32_init_rect(&mix_damage, sx, sy, width, height);
+    pixman_region32_union(&data->region, &data->region, &mix_damage);
+
+    if (!data->damage) {
+        pixman_region32_intersect(&mix_damage, &mix_damage, &data->output->pending_commit_damage);
+        if (pixman_region32_not_empty(&mix_damage)) {
+            data->damage = true;
+        }
+    }
+    pixman_region32_fini(&mix_damage);
 }
 
 static void wsland_window_update(struct detection_data *data) {
@@ -192,6 +207,11 @@ static void wsland_window_update(struct detection_data *data) {
         window_state_order.visibleOffsetY = 0;
     }
 
+    if (data->parent) {
+        window_order_info.fieldFlags |= WINDOW_ORDER_FIELD_OWNER;
+        window_state_order.ownerWindowId = data->window->parent_id;
+    }
+
     if (data->offset) {
         window_order_info.fieldFlags |= WINDOW_ORDER_FIELD_WND_OFFSET;
         window_state_order.windowOffsetX = data->window->current.x;
@@ -202,7 +222,7 @@ static void wsland_window_update(struct detection_data *data) {
         bool has_content = !wlr_box_empty(&data->window->current);
         window_order_info.fieldFlags |= WINDOW_ORDER_FIELD_SHOW | WINDOW_ORDER_FIELD_TASKBAR_BUTTON;
         window_state_order.showState = has_content ? WINDOW_SHOW : WINDOW_HIDE;
-        window_state_order.TaskbarButton = has_content ? 0 : 1;
+        window_state_order.TaskbarButton = data->window->parent_id ? 1 : 0;
 
         window_order_info.fieldFlags |= WINDOW_ORDER_FIELD_CLIENT_AREA_SIZE;
         window_state_order.clientAreaWidth = data->window->current.width;
@@ -305,18 +325,11 @@ static void wsland_window_update(struct detection_data *data) {
     }
 }
 
-static void wsland_window_detection(wsland_output *output, wsland_adapter *adapter, wsland_window *window) {
+static void wsland_window_detection(wsland_output *output, wsland_adapter *adapter, wsland_window *window, struct wl_array *render_nodes) {
     struct detection_data data = { .output = output, .adapter = adapter, .window = window };
 
     if (!window->window_id) {
         window->window_id = ++wsland_window_id;
-
-        if (window->handle) {
-            wsland_window *parent = window->handle->window_fetch_parent(window);
-            if (parent) {
-                window->parent_id = parent->window_id;
-            }
-        }
         data.create = true;
     }
 
@@ -327,21 +340,19 @@ static void wsland_window_detection(wsland_output *output, wsland_adapter *adapt
     pixman_region32_fini(&data.region);
 
     if (window->current.width != data.pending.width || window->current.height != data.pending.height) {
-        {
-            if (window->buffer) {
-                wlr_buffer_drop(window->buffer);
+        if (data.pending.width > 0 && data.pending.height > 0) {
+            if (window->swapchain) {
+                wlr_swapchain_destroy(window->swapchain);
             }
-            if (data.pending.width > 0 || data.pending.height > 0) {
-                    window->buffer = wlr_allocator_create_buffer(
-                    window->server->allocator, data.pending.width, data.pending.height,
-                    &(const struct wlr_drm_format) { .format = DRM_FORMAT_ABGR8888 }
-                );
-            }
+            window->swapchain = wlr_swapchain_create(
+                window->server->allocator, data.pending.width, data.pending.height,
+                &(const struct wlr_drm_format) { .format = DRM_FORMAT_ABGR8888 }
+            );
+            window->current.width = data.pending.width;
+            window->current.height = data.pending.height;
+            data.resize = true;
+            data.update = true;
         }
-        window->current.width = data.pending.width;
-        window->current.height = data.pending.height;
-        data.resize = true;
-        data.update = true;
     }
 
     if (window->current.x != data.pending.x || window->current.y != data.pending.y) {
@@ -352,14 +363,20 @@ static void wsland_window_detection(wsland_output *output, wsland_adapter *adapt
     }
 
     if (window->handle) {
-        char *title = window->handle->window_fetch_title(window);
-
-        if (title) {
+        char *title;
+        if ((title = window->handle->window_fetch_title(window)) != NULL) {
             if (!window->title || strcmp(window->title, title) != 0) {
                 window->title = strdup(title);
                 data.title = true;
                 data.update = true;
             }
+        }
+
+        wsland_window *parent;
+        if ((parent = window->handle->window_fetch_parent(window)) != NULL && parent->window_id != window->parent_id) {
+            window->parent_id = parent->window_id;
+            data.parent = true;
+            data.update = true;
         }
     }
 
@@ -367,69 +384,75 @@ static void wsland_window_detection(wsland_output *output, wsland_adapter *adapt
         wsland_window_update(&data);
     }
 
-    if (data.damage) {
-        struct wlr_render_pass *pass = wlr_renderer_begin_buffer_pass(
-            window->server->renderer, window->buffer, NULL
-        );
+    struct wlr_buffer *buffer;
+    if (data.damage && (buffer = wlr_swapchain_acquire(data.window->swapchain, NULL)) != NULL) {
+        struct wlr_render_pass *pass = wlr_renderer_begin_buffer_pass(window->server->renderer, buffer, NULL);
 
-        wlr_render_pass_add_rect(pass, &(const struct wlr_render_rect_options) {
-            .box = { 0, 0, window->current.width, window->current.height },
-            .color = { 0, 0, 0,  0 },
-            .blend_mode = WLR_RENDER_BLEND_MODE_NONE
-        });
+        if (pass) {
+            wlr_render_pass_add_rect(pass, &(const struct wlr_render_rect_options) {
+                .box = { 0, 0, window->current.width, window->current.height },
+                .color = { 0, 0, 0,  0 }, .blend_mode = WLR_RENDER_BLEND_MODE_NONE
+            });
 
-        struct detection_node *node;
-        wl_array_for_each(node, &data.nodes) {
-            struct wlr_scene_surface *scene_surface = wlr_scene_surface_try_from_buffer(node->scene_buffer);
-            if (!scene_surface) {
-                return;
-            }
+            struct detection_node *d_node;
+            wl_array_for_each(d_node, &data.nodes) {
+                pixman_region32_t render_region;
+                pixman_region32_init_rect(&render_region, d_node->sx, d_node->sy, d_node->width, d_node->height);
+                pixman_region32_translate(&render_region, -window->current.x, -window->current.y);
+                if (!pixman_region32_not_empty(&render_region)) {
+                    pixman_region32_fini(&render_region);
+                    continue;
+                }
 
-            pixman_region32_t render_region;
-            pixman_region32_init(&render_region);
-            pixman_region32_copy(&render_region, &node->scene_buffer->node.visible);
-            pixman_region32_translate(
-                &render_region,
-                -window->current.x,
-                -window->current.y
-            );
-            if (!pixman_region32_not_empty(&render_region)) {
+                struct wlr_box dst_box = {0};
+                region_to_box(&render_region, &dst_box);
+
+                pixman_region32_t opaque;
+                pixman_region32_init(&opaque);
+                scene_node_opaque_region(&d_node->buffer->node, dst_box.x, dst_box.y, &opaque);
+                pixman_region32_subtract(&opaque, &render_region, &opaque);
+
+                struct wlr_texture *texture = scene_buffer_get_texture(d_node->buffer, window->server->renderer);
+
+                if (texture) {
+                    wlr_render_pass_add_texture(pass, &(struct wlr_render_texture_options) {
+                        .texture = texture, .src_box = d_node->buffer->src_box, .dst_box = dst_box,
+                        .clip = &render_region, .alpha = &d_node->buffer->opacity, .filter_mode = d_node->buffer->filter_mode,
+                        .blend_mode = pixman_region32_not_empty(&opaque) ? WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
+                    });
+                }
+
                 pixman_region32_fini(&render_region);
-                return;
+                pixman_region32_fini(&opaque);
             }
 
-            struct wlr_box dst_box = {0};
-            region_to_box(&render_region, &dst_box);
+            if (wlr_render_pass_submit(pass)) {
+                struct wlr_texture *texture = wlr_texture_from_buffer(window->server->renderer, buffer);
 
-            pixman_region32_t opaque;
-            pixman_region32_init(&opaque);
-            scene_node_opaque_region(&node->scene_buffer->node, dst_box.x, dst_box.y, &opaque);
-            pixman_region32_subtract(&opaque, &render_region, &opaque);
+                int bpp = 4; /* Bytes Per Pixel. */
+                struct wlr_box box = { .width = window->current.width, .height = window->current.height };
 
-            struct wlr_texture *texture = scene_buffer_get_texture(node->scene_buffer, window->server->renderer);
+                int damage_stride = box.width * 4;
+                int damage_size = damage_stride * box.height;
+                uint8_t *ptr = malloc(damage_size);
 
-            if (texture) {
-                wlr_render_pass_add_texture(pass, &(struct wlr_render_texture_options) {
-                    .texture = texture, .src_box = node->scene_buffer->src_box, .dst_box = dst_box,
-                    .clip = &render_region, .alpha = &node->scene_buffer->opacity, .filter_mode = node->scene_buffer->filter_mode,
-                    .blend_mode = pixman_region32_not_empty(&opaque) ? WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
-                });
+                if (wlr_texture_read_pixels(
+                    texture, &(const struct wlr_texture_read_pixels_options){
+                        .data = ptr, .format = DRM_FORMAT_ARGB8888, .stride = damage_stride,
+                        .src_box = { box.x, box.y, box.width, box.height },
+                    }
+                )) {
+                    struct render_node *r_node = wl_array_add(render_nodes, sizeof(*r_node));
+                    r_node->data_size = damage_size;
+                    r_node->window = window;
+                    r_node->data = ptr;
+                    r_node->box = box;
+                    r_node->bpp = bpp;
+                }
+                wlr_texture_destroy(texture);
             }
-
-            pixman_region32_fini(&render_region);
-            pixman_region32_fini(&opaque);
         }
-
-        if (wlr_render_pass_submit(pass)) {
-            pixman_region32_init_rect(
-                &window->damage,
-                window->current.x,
-                window->current.y,
-                window->current.width,
-                window->current.height
-            );
-            window->dirty = true;
-        }
+        wlr_buffer_unlock(buffer);
     }
     wl_array_release(&data.nodes);
 }
@@ -502,9 +525,8 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
 
 destroy_window_data:
     if (window->window_id) {
-        pixman_region32_fini(&window->damage);
-        if (window->buffer) {
-            wlr_buffer_drop(window->buffer);
+        if (window->swapchain) {
+            wlr_swapchain_destroy(window->swapchain);
         }
         if (window->title) {
             free(window->title);
@@ -589,10 +611,6 @@ static void wsland_cursor_frame(struct wl_listener *listener, void *data) {
     }
 }
 
-struct render_node {
-    wsland_window *window;
-};
-
 static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
     wsland_adapter *adapter = wl_container_of(listener, adapter, events.wsland_window_frame);
     wsland_output *output = user_data;
@@ -604,6 +622,9 @@ static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
         if (adapter->freerdp->peer->current_frame_id - adapter->freerdp->peer->acknowledged_frame_id >= 2) {
             return;
         }
+        if (output->server->move.mode == WSLAND_CURSOR_MOVE) {
+            return;
+        }
     }
     RdpgfxServerContext *gfx_ctx = adapter->freerdp->peer->ctx_server_rdpgfx;
 
@@ -613,16 +634,11 @@ static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
 
         wsland_window *window;
         wl_list_for_each(window, &output->server->windows, server_link) {
-            wsland_window_detection(output, adapter, window);
-
-            if (window->dirty) {
-                struct render_node *node = wl_array_add(&render_nodes, sizeof(*node));
-                node->window = window;
-            }
+            wsland_window_detection(output, adapter, window, &render_nodes);
         }
     }
 
-    if (render_nodes.size > 0 && output->server->move.mode != WSLAND_CURSOR_MOVE) {
+    if (render_nodes.size > 0) {
         int frame_id = ++adapter->freerdp->peer->current_frame_id;
 
         RDPGFX_START_FRAME_PDU start_frame = { .frameId = frame_id };
@@ -630,128 +646,89 @@ static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
         {
             struct render_node *node;
             wl_array_for_each(node, &render_nodes) {
-                node->window->dirty = false;
+                BYTE *data = node->data;
+                bool has_alpha = true;
+                int alpha_size;
+                BYTE *alpha;
+                {
+                    int alpha_codec_header_size = 4;
+                    if (has_alpha) {
+                        alpha_size = alpha_codec_header_size + node->box.width * node->box.height;
+                    }
+                    else {
+                        /* 8 = max of ALPHA_RLE_SEGMENT for single alpha value. */
+                        alpha_size = alpha_codec_header_size + 8;
+                    }
+                    alpha = malloc(alpha_size);
 
-                struct wlr_texture *texture = wlr_texture_from_buffer(
-                    node->window->server->renderer, node->window->buffer
-                );
+                    /* generate alpha only bitmap */
+                    /* set up alpha codec header */
+                    alpha[0] = 'L'; /* signature */
+                    alpha[1] = 'A'; /* signature */
+                    alpha[2] = has_alpha ? 0 : 1; /* compression: RDP spec indicate this is non-zero value for compressed, but it must be 1.*/
+                    alpha[3] = 0; /* compression */
 
-                pixman_region32_t damage;
-                pixman_region32_init(&damage);
-                pixman_region32_copy(&damage, &node->window->damage);
-                // pixman_region32_intersect(&damage, &damage, &output->pending_commit_damage);
-                pixman_region32_translate(&damage, -node->window->current.x, -node->window->current.y);
-                pixman_region32_fini(&node->window->damage);
+                    if (has_alpha) {
+                        BYTE *alpha_bits = &data[0];
 
-                if (pixman_region32_not_empty(&damage)) {
-                    wsland_log(ADAPTER, ERROR, "app damage: %d, %d, %d, %d",
-                        damage.extents.x1,
-                        damage.extents.y1,
-                        damage.extents.x2 - damage.extents.x1,
-                        damage.extents.y2 - damage.extents.y1
-                    );
+                        for (int i = 0; i < node->box.height; i++, alpha_bits += node->box.width * node->bpp) {
+                            BYTE *src_alpha_pixel = alpha_bits + 3; /* 3 = xxxA. */
+                            BYTE *dst_alpha_pixel = &alpha[alpha_codec_header_size + i * node->box.width];
 
-                    int buffer_bpp = 4; /* Bytes Per Pixel. */
-                    int width = damage.extents.x2 - damage.extents.x1;
-                    int height = damage.extents.y2 - damage.extents.y1;
-
-                    int damage_stride = width * 4;
-                    int damage_size = damage_stride * height;
-                    uint8_t *ptr = malloc(damage_size);
-
-                    if (wlr_texture_read_pixels(
-                        texture, &(const struct wlr_texture_read_pixels_options){
-                            .data = ptr, .format = DRM_FORMAT_ARGB8888, .stride = damage_stride,
-                            .src_box = { damage.extents.x1, damage.extents.y1, width, height },
-                        }
-                    )) {
-                        BYTE *data = ptr;
-                        bool has_alpha = true;
-                        int alpha_size;
-                        BYTE *alpha;
-                        {
-                            int alpha_codec_header_size = 4;
-                            if (has_alpha) {
-                                alpha_size = alpha_codec_header_size + width * height;
-                            }
-                            else {
-                                /* 8 = max of ALPHA_RLE_SEGMENT for single alpha value. */
-                                alpha_size = alpha_codec_header_size + 8;
-                            }
-                            alpha = malloc(alpha_size);
-
-                            /* generate alpha only bitmap */
-                            /* set up alpha codec header */
-                            alpha[0] = 'L'; /* signature */
-                            alpha[1] = 'A'; /* signature */
-                            alpha[2] = has_alpha ? 0 : 1; /* compression: RDP spec indicate this is non-zero value for compressed, but it must be 1.*/
-                            alpha[3] = 0; /* compression */
-
-                            if (has_alpha) {
-                                BYTE *alpha_bits = &data[0];
-
-                                for (int i = 0; i < height; i++, alpha_bits += width * buffer_bpp) {
-                                    BYTE *src_alpha_pixel = alpha_bits + 3; /* 3 = xxxA. */
-                                    BYTE *dst_alpha_pixel = &alpha[alpha_codec_header_size + i * width];
-
-                                    for (int j = 0; j < width; j++, src_alpha_pixel += buffer_bpp, dst_alpha_pixel++) {
-                                        *dst_alpha_pixel = *src_alpha_pixel;
-                                    }
-                                }
-                            }
-                            else {
-                                int bitmap_size = width * height;
-
-                                alpha[alpha_codec_header_size] = 0xFF; /* alpha value (opaque) */
-                                if (bitmap_size < 0xFF) {
-                                    alpha[alpha_codec_header_size + 1] = (BYTE)bitmap_size;
-                                    alpha_size = alpha_codec_header_size + 2; /* alpha value + size in byte. */
-                                }
-                                else if (bitmap_size < 0xFFFF) {
-                                    alpha[alpha_codec_header_size + 1] = 0xFF;
-                                    *(short*)&alpha[alpha_codec_header_size + 2] = (short)bitmap_size;
-                                    alpha_size = alpha_codec_header_size + 4; /* alpha value + 1 + size in short. */
-                                }
-                                else {
-                                    alpha[alpha_codec_header_size + 1] = 0xFF;
-                                    *(short*)&alpha[alpha_codec_header_size + 2] = 0xFFFF;
-                                    *(int*)&alpha[alpha_codec_header_size + 4] = bitmap_size;
-                                    alpha_size = alpha_codec_header_size + 8; /* alpha value + 1 + 2 + size in int. */
-                                }
+                            for (int j = 0; j < node->box.width; j++, src_alpha_pixel += node->bpp, dst_alpha_pixel++) {
+                                *dst_alpha_pixel = *src_alpha_pixel;
                             }
                         }
+                    }
+                    else {
+                        int bitmap_size = node->box.width * node->box.height;
 
-                        RDPGFX_SURFACE_COMMAND surface_command = {0};
-                        surface_command.surfaceId = node->window->surface_id;
-                        surface_command.format = PIXEL_FORMAT_BGRA32;
-                        surface_command.left = damage.extents.x1;
-                        surface_command.top = damage.extents.y1;
-                        surface_command.right = damage.extents.x2;
-                        surface_command.bottom = damage.extents.y2;
-                        surface_command.width = width;
-                        surface_command.height = height;
-                        surface_command.contextId = 0;
-                        surface_command.extra = NULL;
-
-                        surface_command.codecId = RDPGFX_CODECID_ALPHA;
-                        surface_command.length = alpha_size;
-                        surface_command.data = &alpha[0];
-                        gfx_ctx->SurfaceCommand(gfx_ctx, &surface_command);
-
-                        surface_command.codecId = RDPGFX_CODECID_UNCOMPRESSED;
-                        surface_command.length = damage_size;
-                        surface_command.data = &data[0];
-                        gfx_ctx->SurfaceCommand(gfx_ctx, &surface_command);
-
-                        wsland_frame_buffer *frame_buffer = calloc(1, sizeof(*frame_buffer));
-                        frame_buffer->frame_id = frame_id;
-                        frame_buffer->alpha = alpha;
-                        frame_buffer->ptr = ptr;
-                        wl_list_insert(&adapter->buffers, &frame_buffer->link);
+                        alpha[alpha_codec_header_size] = 0xFF; /* alpha value (opaque) */
+                        if (bitmap_size < 0xFF) {
+                            alpha[alpha_codec_header_size + 1] = (BYTE)bitmap_size;
+                            alpha_size = alpha_codec_header_size + 2; /* alpha value + size in byte. */
+                        }
+                        else if (bitmap_size < 0xFFFF) {
+                            alpha[alpha_codec_header_size + 1] = 0xFF;
+                            *(short*)&alpha[alpha_codec_header_size + 2] = (short)bitmap_size;
+                            alpha_size = alpha_codec_header_size + 4; /* alpha value + 1 + size in short. */
+                        }
+                        else {
+                            alpha[alpha_codec_header_size + 1] = 0xFF;
+                            *(short*)&alpha[alpha_codec_header_size + 2] = 0xFFFF;
+                            *(int*)&alpha[alpha_codec_header_size + 4] = bitmap_size;
+                            alpha_size = alpha_codec_header_size + 8; /* alpha value + 1 + 2 + size in int. */
+                        }
                     }
                 }
-                pixman_region32_fini(&damage);
-                wlr_texture_destroy(texture);
+
+                RDPGFX_SURFACE_COMMAND surface_command = {0};
+                surface_command.surfaceId = node->window->surface_id;
+                surface_command.format = PIXEL_FORMAT_BGRA32;
+                surface_command.left = node->box.x;
+                surface_command.top = node->box.y;
+                surface_command.right = node->box.x + node->box.width;
+                surface_command.bottom = node->box.y + node->box.height;
+                surface_command.width = node->box.width;
+                surface_command.height = node->box.height;
+                surface_command.contextId = 0;
+                surface_command.extra = NULL;
+
+                surface_command.codecId = RDPGFX_CODECID_ALPHA;
+                surface_command.length = alpha_size;
+                surface_command.data = &alpha[0];
+                gfx_ctx->SurfaceCommand(gfx_ctx, &surface_command);
+
+                surface_command.codecId = RDPGFX_CODECID_UNCOMPRESSED;
+                surface_command.length = node->data_size;
+                surface_command.data = &data[0];
+                gfx_ctx->SurfaceCommand(gfx_ctx, &surface_command);
+
+                wsland_frame_buffer *frame_buffer = malloc(sizeof(*frame_buffer));
+                frame_buffer->frame_id = frame_id;
+                frame_buffer->ptr = node->data;
+                frame_buffer->alpha = alpha;
+                wl_list_insert(&adapter->buffers, &frame_buffer->link);
             }
         }
         RDPGFX_END_FRAME_PDU endFrame = { .frameId = frame_id };

@@ -1,6 +1,9 @@
 // ReSharper disable CppDeprecatedEntity
+#include <unistd.h>
+#include <pthread.h>
 #include <freerdp/channels/wtsvc.h>
 #include <freerdp/channels/channels.h>
+#include <sys/eventfd.h>
 
 #include "wsland/adapter.h"
 #include "wsland/freerdp.h"
@@ -9,6 +12,8 @@
 static int rdp_peer_context_new(freerdp_peer *rdp_peer, wsland_peer *peer) {
     peer->peer = rdp_peer;
 
+    peer->dispatch_fd = -1;
+    wl_list_init(&peer->dispatch_tasks);
     wl_list_init(&peer->outputs);
     return true;
 }
@@ -18,8 +23,8 @@ static void rdp_peer_context_free(freerdp_peer *rdp_peer, wsland_peer *peer) {
         return;
     }
 
-    wsland_output *output, *temp;
-    wl_list_for_each_safe(output, temp, &peer->outputs, peer_link) {
+    wsland_output *output, *o_temp;
+    wl_list_for_each_safe(output, o_temp, &peer->outputs, peer_link) {
         wlr_output_destroy(&output->output);
     }
     wlr_keyboard_finish(&peer->keyboard->keyboard);
@@ -31,6 +36,24 @@ static void rdp_peer_context_free(freerdp_peer *rdp_peer, wsland_peer *peer) {
             wl_event_source_remove(peer->sources[i]);
         }
     }
+
+    if (peer->dispatch_event_source) {
+        wl_event_source_remove(peer->dispatch_event_source);
+        peer->dispatch_event_source = NULL;
+    }
+
+    dispatch_task *task, *t_temp;
+    wl_list_for_each_reverse_safe(task, t_temp, &peer->dispatch_tasks, link) {
+        wl_list_remove(&task->link);
+        task->func(true, task);
+    }
+
+    if (peer->dispatch_fd != -1) {
+        close(peer->dispatch_fd);
+        peer->dispatch_fd = -1;
+    }
+
+    pthread_mutex_destroy(&peer->dispatch_mutex);
     peer->freerdp->peer = NULL;
 }
 
@@ -53,6 +76,62 @@ static int wsland_peer_activity(int fd, uint32_t mask, void *data) {
     }
 
     return 0;
+}
+
+void dispatch_to_display(wsland_peer *peer, dispatch_task_func_t func, dispatch_task *task) {
+    task->peer = peer;
+    task->func = func;
+
+    pthread_mutex_lock(&peer->dispatch_mutex);
+    wl_list_insert(&peer->dispatch_tasks, &task->link);
+    pthread_mutex_unlock(&peer->dispatch_mutex);
+
+    eventfd_write(peer->dispatch_fd, 1);
+}
+
+static int dispatch_task_exec(int fd, uint32_t mask, void *user_data) {
+    wsland_peer *peer = user_data;
+
+    eventfd_t dummy;
+    eventfd_read(peer->dispatch_fd, &dummy);
+
+    dispatch_task *task, *temp;
+    pthread_mutex_lock(&peer->dispatch_mutex);
+    wl_list_for_each_reverse_safe(task, temp, &peer->dispatch_tasks, link) {
+        wl_list_remove(&task->link);
+        break;
+    }
+    pthread_mutex_unlock(&peer->dispatch_mutex);
+
+    task->func(false, task);
+    return 0;
+}
+
+static bool dispatch_task_init(wsland_peer* peer) {
+    if (pthread_mutex_init(&peer->dispatch_mutex, NULL) == -1) {
+        goto mutex_failed;
+    }
+
+    peer->dispatch_fd = eventfd(0, EFD_SEMAPHORE | EFD_CLOEXEC);
+    if (peer->dispatch_fd == -1) {
+        goto dispatch_fd_error;
+    }
+
+    struct wl_event_loop* loop = wsland_adapter_fetch_event_loop(peer->freerdp->adapter);
+    peer->dispatch_event_source = wl_event_loop_add_fd(
+        loop, peer->dispatch_fd, WL_EVENT_READABLE, dispatch_task_exec, peer
+    );
+    if (!peer->dispatch_event_source) {
+        goto dispatch_event_source_error;
+    }
+    return true;
+    dispatch_event_source_error:
+        close(peer->dispatch_fd);
+    peer->dispatch_fd = -1;
+    dispatch_fd_error:
+        pthread_mutex_destroy(&peer->dispatch_mutex);
+    mutex_failed:
+        return false;
 }
 
 static bool rdp_peer_init(wsland_freerdp *freerdp, freerdp_peer *rdp_peer) {
@@ -153,6 +232,11 @@ static bool rdp_peer_init(wsland_freerdp *freerdp, freerdp_peer *rdp_peer) {
 
     for (; i < MAX_FREERDP_FDS; ++i) {
         peer->sources[i] = 0;
+    }
+
+    if (!dispatch_task_init(peer)) {
+        wsland_log(FREERDP, ERROR, "failed to invoke rdp_dispatch_task_init");
+        goto init_failed;
     }
 
     if (!freerdp->peer) {

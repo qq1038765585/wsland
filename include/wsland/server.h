@@ -12,6 +12,9 @@
 #include "wsland/utils/config.h"
 
 #define WSLAND_DEFAULT_REFRESH (60 * 1000) // 60 Hz
+#define LISTEN(E, L, H) wl_signal_add((E), ((L)->notify = (H), (L)))
+#define MAX(A, B) ((A) > (B) ? (A) : (B))
+#define MIN(A, B) ((A) < (B) ? (A) : (B))
 
 struct wsland_server;
 struct wsland_window;
@@ -27,47 +30,45 @@ typedef enum wsland_cursor_mode {
 
 typedef struct wsland_window_handle {
     char* (*window_fetch_title)(struct wsland_window *window);
+    struct wlr_box* (*window_fetch_geometry)(struct wsland_window *window);
+    struct wlr_surface* (*window_fetch_surface)(struct wsland_window *window);
     struct wsland_window* (*window_fetch_parent)(struct wsland_window *window);
     struct wsland_output* (*window_fetch_output)(struct wsland_window *window);
+    void (*window_resize)(struct wsland_window *window, int width, int height);
     void (*window_activate)(struct wsland_window *window, bool enabled);
-    void (*window_focus)(struct wsland_window *window);
+    void (*surface_activate)(struct wlr_surface *surface, bool enabled);
+    bool (*window_grab_cannot)(struct wsland_window *window);
+    void (*window_maximize)(struct wsland_window *window);
+    void (*window_shutdown)(struct wsland_window *window);
+    void (*window_center)(struct wsland_window *window);
 } wsland_window_handle;
 
 typedef struct wsland_server_handle {
-    void (*server_new_output)(struct wl_listener *listener, void *data);
-    void (*server_new_input)(struct wl_listener *listener, void *data);
-    void (*server_cursor_motion)(struct wl_listener *listener, void *data);
-    void (*server_cursor_motion_absolute)(struct wl_listener *listener, void *data);
-    void (*server_cursor_button)(struct wl_listener *listener, void *data);
-    void (*server_cursor_axis)(struct wl_listener *listener, void *data);
-    void (*server_cursor_frame)(struct wl_listener *listener, void *data);
+    void (*new_surface)(struct wl_listener *listener, void *data);
+    void (*new_output)(struct wl_listener *listener, void *data);
+    void (*new_input)(struct wl_listener *listener, void *data);
+    void (*cursor_motion)(struct wl_listener *listener, void *data);
+    void (*cursor_motion_absolute)(struct wl_listener *listener, void *data);
+    void (*cursor_button)(struct wl_listener *listener, void *data);
+    void (*cursor_axis)(struct wl_listener *listener, void *data);
+    void (*cursor_frame)(struct wl_listener *listener, void *data);
     void (*seat_request_cursor)(struct wl_listener *listener, void *data);
-    void (*seat_request_set_selection)(struct wl_listener *listener, void *data);
+    void (*seat_request_selection)(struct wl_listener *listener, void *data);
 
-    void (*reset_cursor_mode)(struct wsland_server *server);
-    void (*begin_interactive)(struct wsland_window *window, wsland_cursor_mode mode, uint32_t edges);
+    void (*reset_server_cursor)(struct wsland_server *server);
+    void (*begin_window_interactive)(struct wsland_window *window, wsland_cursor_mode mode, uint32_t edges);
+    void (*dispatch_window_focus)(struct wsland_window *window);
 } wsland_server_handle;
 
-typedef struct wsland_popup {
-    struct wlr_xdg_popup *popup;
+typedef struct wsland_surface {
+    struct wlr_surface *surface;
 
     struct {
-        struct wl_listener map;
-        struct wl_listener commit;
         struct wl_listener destroy;
-    } events;
-} wsland_popup;
-
-typedef struct wsland_scene_buffer {
-    struct wlr_scene_buffer *buffer;
-
-    struct {
-        struct wl_listener scene_surface_commit;
-        struct wl_listener scene_surface_destroy;
     } events;
 
     struct wsland_window *window;
-} wsland_scene_buffer;
+} wsland_surface;
 
 typedef struct wsland_keyboard {
     struct wlr_keyboard keyboard;
@@ -156,6 +157,7 @@ typedef struct wsland_server {
     } cache_cursor;
 
     struct {
+        struct wl_listener new_surface;
         struct wl_listener new_output;
         struct wl_listener new_input;
         struct wl_listener cursor_axis;
@@ -166,11 +168,11 @@ typedef struct wsland_server {
         struct wl_listener request_set_selection;
         struct wl_listener cursor_motion_absolute;
 
-        struct wl_listener new_wayland_toplevel;
-        struct wl_listener new_wayland_popup;
+        struct wl_listener wayland_new_toplevel;
+        struct wl_listener wayland_new_popup;
 
+        struct wl_listener xwayland_new_toplevel;
         struct wl_listener xwayland_ready;
-        struct wl_listener new_xwayland_toplevel;
 
         struct wl_listener wsland_cursor_destroy;
 
@@ -190,6 +192,7 @@ void xwayland_event_init(wsland_server *server);
 wsland_server_handle *wsland_server_handle_init(wsland_server *server);
 
 wsland_output *wsland_output_create(wsland_server *server, int width, int height);
+void output_update_refresh(wsland_output *output, int32_t refresh);
 bool wlr_output_is_wsland(struct wlr_output *wlr_output);
 
 wsland_server *wsland_server_create(wsland_config *config);

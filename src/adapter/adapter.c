@@ -15,23 +15,6 @@
 #include "wsland/utils/log.h"
 
 
-void wsland_adapter_activate_for_peer(wsland_peer *peer, uint32_t window_id, bool enabled) {
-    wsland_server *server = peer->freerdp->adapter->server;
-
-    wsland_window *window;
-    wl_list_for_each(window, &server->windows, server_link) {
-        if (window && window->window_id == window_id) {
-            if (enabled) {
-                wlr_scene_node_raise_to_top(&window->tree->node);
-            } else {
-                wlr_scene_node_lower_to_bottom(&window->tree->node);
-            }
-
-            if (window->handle) { window->handle->window_activate(window, enabled); }
-        }
-    }
-}
-
 void wsland_adapter_work_area_for_peer(wsland_peer *peer, struct wlr_box area) {
     wsland_server *server = peer->freerdp->adapter->server;
 
@@ -116,17 +99,10 @@ wsland_adapter* wsland_adapter_create(wsland_server *server) {
     }
 
     {
-        adapter->events.wsland_window_motion.notify = adapter->handle->wsland_window_motion;
-        wl_signal_add(&server->events.wsland_window_motion, &adapter->events.wsland_window_motion);
-
-        adapter->events.wsland_window_destroy.notify = adapter->handle->wsland_window_destroy;
-        wl_signal_add(&server->events.wsland_window_destroy, &adapter->events.wsland_window_destroy);
-
-        adapter->events.wsland_cursor_frame.notify = adapter->handle->wsland_cursor_frame;
-        wl_signal_add(&server->events.wsland_cursor_frame, &adapter->events.wsland_cursor_frame);
-
-        adapter->events.wsland_window_frame.notify = adapter->handle->wsland_window_frame;
-        wl_signal_add(&server->events.wsland_window_frame, &adapter->events.wsland_window_frame);
+        LISTEN(&server->events.wsland_window_frame, &adapter->events.wsland_window_frame, adapter->handle->wsland_window_frame);
+        LISTEN(&server->events.wsland_window_motion, &adapter->events.wsland_window_motion, adapter->handle->wsland_window_motion);
+        LISTEN(&server->events.wsland_window_destroy, &adapter->events.wsland_window_destroy, adapter->handle->wsland_window_destroy);
+        LISTEN(&server->events.wsland_cursor_frame, &adapter->events.wsland_cursor_frame, adapter->handle->wsland_cursor_frame);
     }
 
     wl_list_init(&adapter->buffers);

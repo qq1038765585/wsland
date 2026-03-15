@@ -166,32 +166,26 @@ wsland_server *wsland_server_create(wsland_config *config) {
 
     {
         // backend event
-        server->events.new_output.notify = server->handle->server_new_output;
-        wl_signal_add(&server->backend->events.new_output, &server->events.new_output);
+        LISTEN(&server->backend->events.new_output, &server->events.new_output, server->handle->new_output);
+        LISTEN(&server->backend->events.new_input, &server->events.new_input, server->handle->new_input);
 
-        server->events.new_input.notify = server->handle->server_new_input;
-        wl_signal_add(&server->backend->events.new_input, &server->events.new_input);
+        // compositor event
+        LISTEN(&server->compositor->events.new_surface, &server->events.new_surface, server->handle->new_surface);
 
-        // cursor event
+        // cursor config
+        server->move.mode = WSLAND_CURSOR_PASSTHROUGH;
         wlr_cursor_attach_output_layout(server->cursor, server->output_layout);
 
-        server->move.mode = WSLAND_CURSOR_PASSTHROUGH;
-        server->events.cursor_motion.notify = server->handle->server_cursor_motion;
-        wl_signal_add(&server->cursor->events.motion, &server->events.cursor_motion);
-        server->events.cursor_motion_absolute.notify = server->handle->server_cursor_motion_absolute;
-        wl_signal_add(&server->cursor->events.motion_absolute, &server->events.cursor_motion_absolute);
-        server->events.cursor_button.notify = server->handle->server_cursor_button;
-        wl_signal_add(&server->cursor->events.button, &server->events.cursor_button);
-        server->events.cursor_axis.notify = server->handle->server_cursor_axis;
-        wl_signal_add(&server->cursor->events.axis, &server->events.cursor_axis);
-        server->events.cursor_frame.notify = server->handle->server_cursor_frame;
-        wl_signal_add(&server->cursor->events.frame, &server->events.cursor_frame);
+        // cursor evnet
+        LISTEN(&server->cursor->events.axis, &server->events.cursor_axis, server->handle->cursor_axis);
+        LISTEN(&server->cursor->events.frame, &server->events.cursor_frame, server->handle->cursor_frame);
+        LISTEN(&server->cursor->events.button, &server->events.cursor_button, server->handle->cursor_button);
+        LISTEN(&server->cursor->events.motion, &server->events.cursor_motion, server->handle->cursor_motion);
+        LISTEN(&server->cursor->events.motion_absolute, &server->events.cursor_motion_absolute, server->handle->cursor_motion_absolute);
 
         // seat event
-        server->events.request_cursor.notify = server->handle->seat_request_cursor;
-        wl_signal_add(&server->seat->events.request_set_cursor, &server->events.request_cursor);
-        server->events.request_set_selection.notify = server->handle->seat_request_set_selection;
-        wl_signal_add(&server->seat->events.request_set_selection, &server->events.request_set_selection);
+        LISTEN(&server->seat->events.request_set_cursor, &server->events.request_cursor, server->handle->seat_request_cursor);
+        LISTEN(&server->seat->events.request_set_selection, &server->events.request_set_selection, server->handle->seat_request_selection);
 
         // xdg shell event
         wayland_event_init(server);
@@ -241,8 +235,8 @@ void wsland_server_destroy(wsland_server *server) {
 
         wl_display_destroy_clients(server->display);
 
-        wl_list_remove(&server->events.new_wayland_toplevel.link);
-        wl_list_remove(&server->events.new_wayland_popup.link);
+        wl_list_remove(&server->events.wayland_new_toplevel.link);
+        wl_list_remove(&server->events.wayland_new_popup.link);
 
         wl_list_remove(&server->events.cursor_motion.link);
         wl_list_remove(&server->events.cursor_motion_absolute.link);
@@ -250,11 +244,12 @@ void wsland_server_destroy(wsland_server *server) {
         wl_list_remove(&server->events.cursor_axis.link);
         wl_list_remove(&server->events.cursor_frame.link);
 
+        wl_list_remove(&server->events.new_surface.link);
+        wl_list_remove(&server->events.new_output.link);
         wl_list_remove(&server->events.new_input.link);
         wl_list_remove(&server->events.request_cursor.link);
         wl_list_remove(&server->events.request_set_selection.link);
 
-        wl_list_remove(&server->events.new_output.link);
 
         wlr_scene_node_destroy(&server->scene->tree.node);
         wlr_xcursor_manager_destroy(server->cursor_manager);

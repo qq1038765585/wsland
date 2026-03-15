@@ -18,6 +18,16 @@
 #define MAX_FREERDP_FDS 32
 #define MAX_FREERDP_KEYS 256
 
+#define RAIL_MARKER_WINDOW_ID  0xFFFFFFFE
+#define RAIL_DESKTOP_WINDOW_ID 0xFFFFFFFF
+
+#define DISPATCH(C, T, D, CB) { \
+    wsland_peer *peer = (C)->custom; \
+    dispatch_data *data = malloc(sizeof(*data)); \
+    data->peer = peer; data->T = *(D); \
+    dispatch_to_display(peer, CB, &data->task); \
+}
+
 struct wsland_peer;
 struct wsland_adapter;
 
@@ -39,9 +49,9 @@ typedef struct wsland_peer_handle {
     BOOL (*xf_input_keyboard_event)(rdpInput *input, UINT16 flags, UINT16 code);
     BOOL (*xf_input_unicode_keyboard_event)(rdpInput *input, UINT16 flags, UINT16 code);
 
-    void (*rail_client_activate)(struct wsland_peer *peer, const RAIL_ACTIVATE_ORDER *arg);
-    void (*rail_client_sysparam)(struct wsland_peer *peer, const RAIL_SYSPARAM_ORDER *arg);
-    void (*rdpgfx_frame_acknowledge)(struct wsland_peer *peer);
+    void (*rail_client_activate)(bool free_only, void *user_data);
+    void (*rail_client_sysparam)(bool free_only, void *user_data);
+    void (*rdpgfx_frame_acknowledge)(bool free_only, void *user_data);
 } wsland_peer_handle;
 
 typedef struct wsland_freerdp {
@@ -89,10 +99,38 @@ typedef struct wsland_peer {
     bool is_acknowledged_suspended;
     bool mouse_button_swap;
 
+    struct wl_list dispatch_tasks;
+    struct wl_event_source *dispatch_event_source;
+    pthread_mutex_t dispatch_mutex;
+    int dispatch_fd;
+
     struct wsland_freerdp *freerdp;
     struct wsland_keyboard *keyboard;
     struct wsland_peer_handle *handle;
 } wsland_peer;
+
+typedef void (*dispatch_task_func_t)(bool free_only, void *data);
+
+typedef struct dispatch_task {
+    dispatch_task_func_t func;
+    struct wl_list link;
+
+    wsland_peer *peer;
+} dispatch_task;
+
+typedef struct dispatch_data {
+    dispatch_task task;
+
+    union {
+        RAIL_ACTIVATE_ORDER activate;
+        RAIL_SYSPARAM_ORDER sysparam;
+        RDPGFX_FRAME_ACKNOWLEDGE_PDU frame_acknowledge;
+    };
+
+    wsland_peer *peer;
+} dispatch_data;
+
+void dispatch_to_display(wsland_peer *peer, dispatch_task_func_t func, dispatch_task *task);
 
 bool ctx_applist_init(wsland_peer *peer);
 bool ctx_gfxredir_init(wsland_peer *peer);

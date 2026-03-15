@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <linux/input-event-codes.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -13,6 +13,64 @@
 #include "wsland/utils/log.h"
 
 
+static void dispatch_window_focus(wsland_window *window) {
+    if (!window || !window->tree) {
+        return;
+    }
+
+    wsland_server *server = window->server;
+    struct wlr_seat *seat = server->seat;
+    struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
+    struct wlr_surface *cur_surface = window->handle->window_fetch_surface(window);
+    if (prev_surface == cur_surface) {
+        return;
+    }
+
+    if (prev_surface) {
+        window->handle->surface_activate(prev_surface, false);
+    }
+
+    struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(seat);
+    wlr_scene_node_raise_to_top(&window->tree->node);
+
+    wl_list_remove(&window->server_link);
+    wl_list_insert(&server->windows, &window->server_link);
+    window->handle->window_activate(window, true);
+
+    if (cur_surface && cur_surface->data) {
+        wsland_surface *surface = cur_surface->data;
+        surface->window = window;
+    }
+
+    if (keyboard != NULL) {
+        wlr_seat_keyboard_notify_enter(
+            seat, cur_surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers
+        );
+    }
+
+    wsland_window *temp;
+    wl_list_for_each(temp, &window->children, parent_link) {
+        dispatch_window_focus(temp);
+    }
+}
+
+static void surface_destroy(struct wl_listener *listener, void *data) {
+    wsland_surface *surface = wl_container_of(listener, surface, events.destroy);
+
+    wl_list_remove(&surface->events.destroy.link);
+    free(surface);
+}
+
+static void server_new_surface(struct wl_listener *listener, void *data) {
+    wsland_server *server = wl_container_of(listener, server, events.new_surface);
+
+    wsland_surface *surface = calloc(1, sizeof(*surface));
+    surface->surface = data;
+    surface->surface->data = surface;
+
+    LISTEN(&surface->surface->events.destroy, &surface->events.destroy, surface_destroy);
+}
+
 static void output_frame(struct wl_listener *listener, void *data) {
     wsland_output *output = wl_container_of(listener, output, events.frame);
 
@@ -21,12 +79,6 @@ static void output_frame(struct wl_listener *listener, void *data) {
     pixman_region32_translate(&output->pending_commit_damage, output->scene_output->x, output->scene_output->y);
     if (wlr_scene_output_commit(output->scene_output, NULL)) {
         if (pixman_region32_not_empty(&output->pending_commit_damage)) {
-            wsland_log(SERVER, ERROR, "damage: %d, %d, %d, %d",
-                output->pending_commit_damage.extents.x1,
-                output->pending_commit_damage.extents.y1,
-                output->pending_commit_damage.extents.x2 - output->pending_commit_damage.extents.x1,
-                output->pending_commit_damage.extents.y2 - output->pending_commit_damage.extents.y1
-            );
             wl_signal_emit(&output->server->events.wsland_window_frame, output);
         }
         pixman_region32_fini(&output->pending_commit_damage);
@@ -52,10 +104,8 @@ static void server_new_output(struct wl_listener *listener, void *data) {
 
     wlr_output_init_render(&output->output, server->allocator, server->renderer);
 
-    output->events.frame.notify = output_frame;
-    wl_signal_add(&output->output.events.frame, &output->events.frame);
-    output->events.destroy.notify = output_destroy;
-    wl_signal_add(&output->output.events.destroy, &output->events.destroy);
+    LISTEN(&output->output.events.frame, &output->events.frame, output_frame);
+    LISTEN(&output->output.events.destroy, &output->events.destroy, output_destroy);
     wl_list_insert(&server->outputs, &output->server_link);
 
     output->scene_output = wlr_scene_output_create(server->scene, &output->output);
@@ -83,7 +133,7 @@ static bool alt_keybinding(wsland_server *server, xkb_keysym_t sym) {
                 break;
             }
             wsland_window *next_window = wl_container_of(server->windows.prev, next_window, server_link);
-            if (next_window && next_window->handle) { next_window->handle->window_focus(next_window); }
+            dispatch_window_focus(next_window);
         }
         break;
     default:
@@ -94,13 +144,35 @@ static bool alt_keybinding(wsland_server *server, xkb_keysym_t sym) {
 
 static bool alt_shift_keybinding(wsland_server *server, xkb_keysym_t sym) {
     switch (sym) {
-    case XKB_KEY_Q:
-        {
+    case XKB_KEY_Q: {
             struct wlr_surface *ws = server->seat->keyboard_state.focused_surface;
-            if (ws) {
-                struct wlr_xdg_toplevel *toplevel = wlr_xdg_toplevel_try_from_wlr_surface(ws);
-                if (toplevel) {
-                    wlr_xdg_toplevel_send_close(toplevel);
+
+            if (ws && ws->data) {
+                wsland_surface *surface = ws->data;
+                if (surface->window) {
+                    surface->window->handle->window_shutdown(surface->window);
+                }
+            }
+        }
+        break;
+        case XKB_KEY_C: {
+            struct wlr_surface *ws = server->seat->keyboard_state.focused_surface;
+
+            if (ws && ws->data) {
+                wsland_surface *surface = ws->data;
+                if (surface->window) {
+                    surface->window->handle->window_center(surface->window);
+                }
+            }
+        }
+        break;
+        case XKB_KEY_F: {
+            struct wlr_surface *ws = server->seat->keyboard_state.focused_surface;
+
+            if (ws && ws->data) {
+                wsland_surface *surface = ws->data;
+                if (surface->window) {
+                    surface->window->handle->window_maximize(surface->window);
                 }
             }
         }
@@ -161,17 +233,14 @@ static void server_new_keyboard(wsland_server *server, struct wlr_input_device *
     if (!keyboard) {
         return;
     }
+
     keyboard->server = server;
-
-    keyboard->events.key.notify = keyboard_handle_key;
-    wl_signal_add(&keyboard->keyboard.events.key, &keyboard->events.key);
-    keyboard->events.modifiers.notify = keyboard_handle_modifiers;
-    wl_signal_add(&keyboard->keyboard.events.modifiers, &keyboard->events.modifiers);
-    keyboard->events.destroy.notify = keyboard_handle_destroy;
-    wl_signal_add(&device->events.destroy, &keyboard->events.destroy);
-    wl_list_insert(&server->keyboards, &keyboard->server_link);
-
     wlr_seat_set_keyboard(server->seat, &keyboard->keyboard);
+
+    LISTEN(&keyboard->keyboard.events.key, &keyboard->events.key, keyboard_handle_key);
+    LISTEN(&keyboard->keyboard.events.modifiers, &keyboard->events.modifiers, keyboard_handle_modifiers);
+    LISTEN(&device->events.destroy, &keyboard->events.destroy, keyboard_handle_destroy);
+    wl_list_insert(&server->keyboards, &keyboard->server_link);
 }
 
 static void server_new_pointer(wsland_server *server, struct wlr_input_device *device) {
@@ -200,7 +269,7 @@ static void server_new_input(struct wl_listener *listener, void *data) {
     wlr_seat_set_capabilities(server->seat, caps);
 }
 
-static void begin_interactive(wsland_window *window, wsland_cursor_mode mode, uint32_t edges) {
+static void begin_window_interactive(wsland_window *window, wsland_cursor_mode mode, uint32_t edges) {
     wsland_server *server = window->server;
     server->grab.window = window;
     server->move.mode = mode;
@@ -210,7 +279,7 @@ static void begin_interactive(wsland_window *window, wsland_cursor_mode mode, ui
         server->grab.y = server->cursor->y - window->tree->node.y;
     }
     else {
-        struct wlr_box *geo_box = &window->wayland->base->current.geometry;
+        struct wlr_box *geo_box = window->handle->window_fetch_geometry(window);
 
         double border_x = window->tree->node.x + geo_box->x + (edges & WLR_EDGE_RIGHT ? geo_box->width : 0);
         double border_y = window->tree->node.y + geo_box->y + (edges & WLR_EDGE_BOTTOM ? geo_box->height : 0);
@@ -245,15 +314,12 @@ static wsland_window* desktop_toplevel_at(
     }
 
     if (tree) {
-        wsland_window *window = tree->node.data;
-        if (window->type == WAYLAND) {
-            return window;
-        }
+        return tree->node.data;
     }
     return NULL;
 }
 
-static void reset_cursor_mode(wsland_server *server) {
+static void reset_server_cursor(wsland_server *server) {
     if (server->cache_cursor.restore) {
         server->cache_cursor.restore = false;
 
@@ -275,7 +341,7 @@ static void reset_cursor_mode(wsland_server *server) {
 static void process_cursor_move(wsland_server *server) {
     wsland_window *window = server->grab.window;
 
-    if (window->wayland->current.maximized || window->wayland->current.fullscreen) {
+    if (window->handle->window_grab_cannot(window)) {
         return;
     }
 
@@ -291,7 +357,7 @@ static void process_cursor_move(wsland_server *server) {
 static void process_cursor_resize(wsland_server *server) {
     wsland_window *window = server->grab.window;
 
-    if (window->wayland->current.maximized || window->wayland->current.fullscreen) {
+    if (window->handle->window_grab_cannot(window)) {
         return;
     }
 
@@ -327,35 +393,25 @@ static void process_cursor_resize(wsland_server *server) {
         }
     }
 
-    struct wlr_box *geo_box = &window->wayland->base->current.geometry;
+    struct wlr_box *geo_box = window->handle->window_fetch_geometry(window);
     wlr_scene_node_set_position(&window->tree->node, new_left - geo_box->x, new_top - geo_box->y);
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
     {
-        int min_w = 1 - geo_box->x;
-        int min_h = 1 - geo_box->y;
-        if (new_width < min_w) {
-            new_width = min_w;
-        }
-        if (new_height < min_h) {
-            new_height = min_h;
-        }
+        new_width = MAX(1 - geo_box->x, new_width);
+        new_height = MAX(1 - geo_box->y, new_height);
 
         if (window->handle) {
             wsland_output *output = window->handle->window_fetch_output(window);
             if (output) {
-                if (new_width > output->monitor.width) {
-                    new_width = output->monitor.width;
-                }
-                if (new_height
-                    > output->monitor.height) {
-                    new_height = output->monitor.height;
-                    }
+                new_width = MIN(output->monitor.width, new_width);
+                new_height = MIN(output->monitor.height, new_height);
             }
         }
     }
-    wlr_xdg_toplevel_set_size(window->wayland, new_width, new_height);
+
+    window->handle->window_resize(window, new_width, new_height);
 }
 
 static void process_cursor_motion(wsland_server *server, uint32_t time) {
@@ -404,7 +460,7 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
     bool handled = false;
     struct wlr_pointer_button_event *event = data;
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
-        reset_cursor_mode(server);
+        reset_server_cursor(server);
     }
     else {
         double sx, sy;
@@ -412,7 +468,7 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
         wsland_window *window = desktop_toplevel_at(
             server, server->cursor->x, server->cursor->y, &surface, &sx, &sy
         );
-        if (window && window->handle) { window->handle->window_focus(window); }
+        dispatch_window_focus(window);
 
         if (window && (event->button == BTN_LEFT || event->button == BTN_RIGHT)) {
             uint32_t modifiers = wlr_keyboard_get_modifiers(server->seat->keyboard_state.keyboard);
@@ -424,7 +480,7 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
                         server->cache_cursor.s_hotspot_x = server->cache_cursor.hotspot_x;
                         server->cache_cursor.s_hotspot_y = server->cache_cursor.hotspot_y;
                         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "move");
-                        begin_interactive(window, WSLAND_CURSOR_MOVE, 0);
+                        begin_window_interactive(window, WSLAND_CURSOR_MOVE, 0);
                         handled = true;
                     }
                     break;
@@ -446,9 +502,11 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
                         server->cache_cursor.restore = true;
                         server->cache_cursor.s_hotspot_x = server->cache_cursor.hotspot_x;
                         server->cache_cursor.s_hotspot_y = server->cache_cursor.hotspot_y;
-                        wlr_cursor_set_xcursor(server->cursor, server->cursor_manager,
-                                               wlr_xcursor_get_resize_name(edges));
-                        begin_interactive(window, WSLAND_CURSOR_RESIZE, edges);
+                        wlr_cursor_set_xcursor(
+                            server->cursor, server->cursor_manager,
+                            wlr_xcursor_get_resize_name(edges)
+                        );
+                        begin_window_interactive(window, WSLAND_CURSOR_RESIZE, edges);
                         handled = true;
                     }
                     break;
@@ -504,8 +562,8 @@ static void seat_request_cursor(struct wl_listener *listener, void *data) {
             server->cache_cursor.surface = event->surface;
             server->cache_cursor.s_hotspot_x = event->hotspot_x;
             server->cache_cursor.s_hotspot_y = event->hotspot_y;
-            server->events.wsland_cursor_destroy.notify = wsland_cursor_destroy;
-            wl_signal_add(&event->surface->events.destroy, &server->events.wsland_cursor_destroy);
+
+            LISTEN(&event->surface->events.destroy, &server->events.wsland_cursor_destroy, wsland_cursor_destroy);
         }
     }
 }
@@ -515,18 +573,20 @@ static void seat_request_set_selection(struct wl_listener *listener, void *data)
 }
 
 wsland_server_handle wsland_server_handle_impl = {
-    .server_new_output = server_new_output,
-    .server_new_input = server_new_input,
-    .server_cursor_axis = server_cursor_axis,
-    .server_cursor_frame = server_cursor_frame,
-    .server_cursor_motion = server_cursor_motion,
-    .server_cursor_button = server_cursor_button,
-    .server_cursor_motion_absolute = server_cursor_motion_absolute,
-    .seat_request_set_selection = seat_request_set_selection,
+    .new_surface = server_new_surface,
+    .new_output = server_new_output,
+    .new_input = server_new_input,
+    .cursor_axis = server_cursor_axis,
+    .cursor_frame = server_cursor_frame,
+    .cursor_motion = server_cursor_motion,
+    .cursor_button = server_cursor_button,
+    .cursor_motion_absolute = server_cursor_motion_absolute,
+    .seat_request_selection = seat_request_set_selection,
     .seat_request_cursor = seat_request_cursor,
 
-    .reset_cursor_mode = reset_cursor_mode,
-    .begin_interactive = begin_interactive,
+    .reset_server_cursor = reset_server_cursor,
+    .begin_window_interactive = begin_window_interactive,
+    .dispatch_window_focus = dispatch_window_focus
 };
 
 wsland_server_handle *wsland_server_handle_init(wsland_server *server) {

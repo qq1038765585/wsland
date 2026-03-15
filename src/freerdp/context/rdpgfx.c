@@ -103,13 +103,7 @@ static UINT rdpgfx_client_cache_import_offer(RdpgfxServerContext *context, const
 }
 
 static UINT rdpgfx_client_frame_acknowledge(RdpgfxServerContext *context, const RDPGFX_FRAME_ACKNOWLEDGE_PDU *frameAcknowledge) {
-    wsland_peer *peer = context->custom;
-    /*wsland_log(FREERDP, DEBUG, "Client: GrfxFrameAcknowledge(queueDepth = 0x%x, frameId = 0x%x, decodedFrame = %d)\n",
-        frameAcknowledge->queueDepth, frameAcknowledge->frameId, frameAcknowledge->totalFramesDecoded
-    );*/
-
-    peer->acknowledged_frame_id = frameAcknowledge->frameId;
-    peer->handle->rdpgfx_frame_acknowledge(peer);
+    DISPATCH(context, frame_acknowledge, frameAcknowledge, peer->handle->rdpgfx_frame_acknowledge);
     return CHANNEL_RC_OK;
 }
 
