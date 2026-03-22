@@ -174,6 +174,7 @@ static void unmanaged_unmap(struct wl_listener *listener, void *data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.unmap);
 
     wlr_scene_node_destroy(&unmanaged->tree->node);
+    wl_signal_emit(&unmanaged->server->events.wsland_window_destroy, unmanaged);
     wl_list_remove(&unmanaged->parent_link);
     wl_list_remove(&unmanaged->server_link);
 }
@@ -231,6 +232,7 @@ static void xwayland_unmap(struct wl_listener *listener, void *data) {
     wsland_window *window = wl_container_of(listener, window, events.unmap);
 
     wlr_scene_node_destroy(&window->tree->node);
+    wl_signal_emit(&window->server->events.wsland_window_destroy, window);
     wl_list_remove(&window->parent_link);
     wl_list_remove(&window->server_link);
 }

@@ -344,7 +344,6 @@ static void wsland_window_detection(wsland_output *output, wsland_adapter *adapt
     if (window->current.width != data.pending.width || window->current.height != data.pending.height) {
         if (window->texture) {
             wlr_buffer_drop(window->buffer);
-            wlr_buffer_finish(window->buffer);
             wlr_texture_destroy(window->texture);
             window->texture = NULL;
             window->buffer = NULL;
@@ -513,7 +512,6 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
     }
     if (window->texture) {
         wlr_buffer_drop(window->buffer);
-        wlr_buffer_finish(window->buffer);
         wlr_texture_destroy(window->texture);
         window->texture = NULL;
         window->buffer = NULL;
@@ -579,7 +577,6 @@ static void wsland_cursor_frame(struct wl_listener *listener, void *user_data) {
             free(data);
         }
         wlr_buffer_drop(buffer);
-        wlr_buffer_finish(buffer);
         wlr_texture_destroy(texture);
         wlr_texture_destroy(cursor_texture);
 
