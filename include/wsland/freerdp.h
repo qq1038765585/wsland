@@ -8,6 +8,7 @@
 #include <freerdp/server/rail.h>
 #include <freerdp/server/rdpgfx.h>
 #include <freerdp/server/drdynvc.h>
+#include <freerdp/server/cliprdr.h>
 #include <freerdp/server/gfxredir.h>
 #include <rdpapplist/rdpapplist_server.h>
 #include <wayland-server-protocol.h>
@@ -85,6 +86,10 @@ typedef struct wsland_peer {
     RdpgfxServerContext *ctx_server_rdpgfx;
     GfxRedirServerContext *ctx_server_gfxredir;
     RdpAppListServerContext *ctx_server_applist;
+    CliprdrServerContext *ctx_server_clipboard;
+
+    struct clipboard_data_source *clipboard_source;
+    struct clipboard_data_source *clipboard_inflight_source;
 
     uint32_t current_frame_id;
     uint32_t acknowledged_frame_id;
@@ -122,6 +127,7 @@ typedef struct dispatch_data {
         RAIL_ACTIVATE_ORDER activate;
         RAIL_SYSPARAM_ORDER sysparam;
         RDPGFX_FRAME_ACKNOWLEDGE_PDU frame_acknowledge;
+        CLIPRDR_FORMAT_LIST format_list;
     };
 
     wsland_peer *peer;
@@ -135,6 +141,9 @@ bool ctx_rdpgfx_init(wsland_peer *peer);
 bool ctx_disp_init(wsland_peer *peer);
 bool ctx_rail_init(wsland_peer *peer);
 bool ctx_drdynvc_init(wsland_peer *peer);
+
+bool rail_clipboard_init(wsland_peer *peer);
+void rail_clipboard_destroy(wsland_peer *peer);
 
 void wsland_peer_handle_init(wsland_peer *peer);
 

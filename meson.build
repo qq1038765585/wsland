@@ -23,6 +23,7 @@ sources = files(
     'src/freerdp/context/drdynvc.c',
     'src/freerdp/context/applist.c',
     'src/freerdp/context/gfxredir.c',
+    'src/freerdp/context/clipboard.c',
 )
 
 config_h = configuration_data()

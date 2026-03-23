@@ -4,8 +4,7 @@
 #include <wlr/render/allocator.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/render/drm_format_set.h>
-#include "wlr/types/wlr_output_layout.h"
-#include "wlr/interfaces/wlr_output.h"
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/render/pixman.h>
 
@@ -132,6 +131,8 @@ void wsland_adapter_destroy(wsland_adapter *adapter) {
 
         wl_list_remove(&adapter->events.wsland_cursor_frame.link);
         wl_list_remove(&adapter->events.wsland_window_frame.link);
+
+        wl_list_remove(&adapter->events.set_selection.link);
         free(adapter);
     }
 }

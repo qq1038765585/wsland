@@ -113,6 +113,8 @@ typedef struct wsland_server {
     struct wlr_compositor *compositor;
     struct wlr_subcompositor *subcompositor;
     struct wlr_data_device_manager *data_device_manager;
+    struct wlr_data_control_manager_v1 *data_control_manager;
+    struct wlr_primary_selection_v1_device_manager *primary_selection_device_manager;
     struct wlr_server_decoration_manager *server_decoration_manager;
     struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
     struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;

@@ -4,6 +4,7 @@
 #include <wlr/render/allocator.h>
 #include <wlr/render/swapchain.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_scene.h>
@@ -125,7 +126,7 @@ static bool alt_shift_keybinding(wsland_server *server, xkb_keysym_t sym) {
     case XKB_KEY_Q: {
             struct wlr_surface *ws = server->seat->keyboard_state.focused_surface;
 
-            if (ws && ws->data) {
+            if (ws && ws->data && server->move.mode == WSLAND_CURSOR_PASSTHROUGH) {
                 wsland_window *window = ws->data;
                 window->handle->window_shutdown(window);
             }
@@ -316,7 +317,12 @@ static wsland_window* desktop_toplevel_at(
 
 static void reset_server_cursor(wsland_server *server) {
     if (server->move.mode != WSLAND_CURSOR_PASSTHROUGH) {
-        if (server->wsland_cursor.surface && server->wsland_cursor.surface->mapped) {
+        struct wlr_surface *surface = server->wsland_cursor.surface;
+        bool non_xwayland = server->grab.window->type != XWAYLAND;
+
+        if (non_xwayland && surface && surface->mapped) {
+            wsland_log(SERVER, ERROR, "cursor surface: %d, %d", surface->current.width, surface->current.height);
+
             wlr_cursor_set_surface(
                 server->cursor, server->wsland_cursor.surface,
                 server->wsland_cursor.s_hotspot_x, server->wsland_cursor.s_hotspot_y
@@ -538,8 +544,11 @@ static void seat_request_cursor(struct wl_listener *listener, void *data) {
     }
 }
 
-static void seat_request_set_selection(struct wl_listener *listener, void *data) {
+static void seat_request_set_selection(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.request_set_selection);
+    struct wlr_seat_request_set_selection_event *event = user_data;
+
+    wlr_seat_set_selection(server->seat, event->source, event->serial);
 }
 
 wsland_server_handle wsland_server_handle_impl = {

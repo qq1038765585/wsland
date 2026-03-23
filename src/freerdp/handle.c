@@ -219,6 +219,10 @@ static BOOL xf_peer_activate(freerdp_peer *rdp_peer) {
         peer->flags |= WSLAND_PEER_OUTPUT_ENABLED;
     }
 
+    if (!rail_clipboard_init(peer)) {
+        return FALSE;
+    }
+
     peer->flags |= WSLAND_PEER_ACTIVATED;
     return TRUE;
 }

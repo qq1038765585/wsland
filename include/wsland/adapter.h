@@ -86,6 +86,8 @@ typedef struct wsland_adapter {
 
         struct wl_listener wsland_cursor_frame;
         struct wl_listener wsland_window_frame;
+
+        struct wl_listener set_selection;
     } events;
 
     wsland_server *server;

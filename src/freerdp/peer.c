@@ -54,6 +54,7 @@ static void rdp_peer_context_free(freerdp_peer *rdp_peer, wsland_peer *peer) {
     }
 
     pthread_mutex_destroy(&peer->dispatch_mutex);
+    rail_clipboard_destroy(peer);
     peer->freerdp->peer = NULL;
 }
 
@@ -189,7 +190,7 @@ static bool rdp_peer_init(wsland_freerdp *freerdp, freerdp_peer *rdp_peer) {
     rdp_peer->context->settings->RemoteApplicationSupportLevel = remote_application_level;
     rdp_peer->context->settings->SupportGraphicsPipeline = TRUE;
     rdp_peer->context->settings->SupportMonitorLayoutPdu = TRUE;
-    rdp_peer->context->settings->RemoteApplicationMode = TRUE;
+    rdp_peer->context->settings->RedirectClipboard = TRUE;
 
     rdp_peer->AdjustMonitorsLayout = peer->handle->xf_peer_adjust_monitor_layout;
     rdp_peer->Capabilities = peer->handle->xf_peer_capabilities;

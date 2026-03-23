@@ -7,6 +7,7 @@
 #include <wlr/render/allocator.h>
 #include <wlr/render/drm_format_set.h>
 #include <wlr/interfaces/wlr_output.h>
+#include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -15,7 +16,6 @@
 #include <wlr/render/pixman.h>
 #include <cairo/cairo.h>
 
-#include "wlr/interfaces/wlr_buffer.h"
 #include "wsland/adapter.h"
 #include "wsland/utils/box.h"
 #include "wsland/utils/log.h"

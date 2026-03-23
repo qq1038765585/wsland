@@ -20,8 +20,10 @@
 
 #include "wsland/server.h"
 
+#include "wlr/types/wlr_data_control_v1.h"
 #include "wlr/types/wlr_output_management_v1.h"
 #include "wlr/types/wlr_pointer_constraints_v1.h"
+#include "wlr/types/wlr_primary_selection_v1.h"
 #include "wlr/types/wlr_relative_pointer_v1.h"
 #include "wlr/types/wlr_xdg_output_v1.h"
 #include "wsland/utils/log.h"
@@ -94,6 +96,18 @@ wsland_server *wsland_server_create(wsland_config *config) {
     server->data_device_manager = wlr_data_device_manager_create(server->display);
     if (!server->data_device_manager) {
         wsland_log(SERVER, ERROR, "failed to invoke wlr_data_device_manager_create");
+        goto create_failed;
+    }
+
+    server->data_control_manager = wlr_data_control_manager_v1_create(server->display);
+    if (!server->data_control_manager) {
+        wsland_log(SERVER, ERROR, "failed to invoke wlr_data_control_manager_v1_create");
+        goto create_failed;
+    }
+
+    server->primary_selection_device_manager = wlr_primary_selection_v1_device_manager_create(server->display);
+    if (!server->primary_selection_device_manager) {
+        wsland_log(SERVER, ERROR, "failed to invoke wlr_primary_selection_v1_device_manager_create");
         goto create_failed;
     }
 
@@ -262,11 +276,11 @@ void wsland_server_destroy(wsland_server *server) {
 
         wl_list_remove(&server->events.wayland_new_toplevel.link);
 
-        wl_list_remove(&server->events.cursor_motion.link);
-        wl_list_remove(&server->events.cursor_motion_absolute.link);
-        wl_list_remove(&server->events.cursor_button.link);
         wl_list_remove(&server->events.cursor_axis.link);
         wl_list_remove(&server->events.cursor_frame.link);
+        wl_list_remove(&server->events.cursor_motion.link);
+        wl_list_remove(&server->events.cursor_button.link);
+        wl_list_remove(&server->events.cursor_motion_absolute.link);
 
         wl_list_remove(&server->events.new_output.link);
         wl_list_remove(&server->events.new_input.link);
