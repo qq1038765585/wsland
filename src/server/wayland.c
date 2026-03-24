@@ -62,6 +62,12 @@ static struct wlr_box *fetch_geometry(wsland_window *window) {
     return &window->wayland->toplevel->base->current.geometry;
 }
 
+static bool fetch_activate(wsland_window *window) {
+    struct wlr_surface *focus_surface = window->server->seat->keyboard_state.focused_surface;
+    struct wlr_surface *current_surface = fetch_surface(window);
+    return focus_surface == current_surface;
+}
+
 static void window_resize(wsland_window *window, int width, int height) {
     if (window->type != TOPLEVEL) {
         return;
@@ -345,6 +351,7 @@ wsland_window_handle wsland_wayland_window_impl = {
     .fetch_output = fetch_output,
     .fetch_surface = fetch_surface,
     .fetch_geometry = fetch_geometry,
+    .fetch_activate = fetch_activate,
 
     .window_resize = window_resize,
     .window_center = window_center,

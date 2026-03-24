@@ -3,9 +3,10 @@
 
 #include <wlr/render/allocator.h>
 #include <wlr/render/swapchain.h>
-#include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -321,8 +322,6 @@ static void reset_server_cursor(wsland_server *server) {
         bool non_xwayland = server->grab.window->type != XWAYLAND;
 
         if (non_xwayland && surface && surface->mapped) {
-            wsland_log(SERVER, ERROR, "cursor surface: %d, %d", surface->current.width, surface->current.height);
-
             wlr_cursor_set_surface(
                 server->cursor, server->wsland_cursor.surface,
                 server->wsland_cursor.s_hotspot_x, server->wsland_cursor.s_hotspot_y
@@ -448,6 +447,37 @@ static void server_cursor_motion_absolute(struct wl_listener *listener, void *da
     process_cursor_motion(server, event->time_msec);
 }
 
+static void request_decoration_mode(struct wl_listener *listener, void *data) {
+    wsland_window *window = wl_container_of(listener, window, events.request_decoration_mode);
+
+    if (window->wayland->initialized) {
+        wlr_xdg_toplevel_decoration_v1_set_mode(
+            window->decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE
+        );
+    }
+}
+
+static void decoration_destroy(struct wl_listener *listener, void *data) {
+    wsland_window *window = wl_container_of(listener, window, events.decoration_destroy);
+
+    wl_list_remove(&window->events.decoration_destroy.link);
+    wl_list_remove(&window->events.request_decoration_mode.link);
+}
+
+static void server_new_toplevel_decoration(struct wl_listener *listener, void *data) {
+    wsland_server *server = wl_container_of(listener, server, events.new_toplevel_decoration);
+    struct wlr_xdg_toplevel_decoration_v1 *decoration = data;
+
+    struct wlr_scene_tree *tree = decoration->toplevel->base->data;
+    if (tree && tree->node.data) {
+        wsland_window *window = tree->node.data;
+        window->decoration = decoration;
+
+        LISTEN(&decoration->events.request_mode, &window->events.request_decoration_mode, request_decoration_mode);
+        LISTEN(&decoration->events.destroy, &window->events.decoration_destroy, decoration_destroy);
+    }
+}
+
 static void server_cursor_button(struct wl_listener *listener, void *data) {
     wsland_server *server = wl_container_of(listener, server, events.cursor_button);
 
@@ -559,6 +589,7 @@ wsland_server_handle wsland_server_handle_impl = {
     .cursor_motion = server_cursor_motion,
     .cursor_button = server_cursor_button,
     .cursor_motion_absolute = server_cursor_motion_absolute,
+    .new_toplevel_decoration = server_new_toplevel_decoration,
     .seat_request_selection = seat_request_set_selection,
     .seat_request_cursor = seat_request_cursor,
 

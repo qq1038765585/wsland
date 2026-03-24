@@ -15,6 +15,7 @@ typedef struct wsland_window {
     enum adapter_type type;
     struct wlr_scene_tree *tree;
     struct wsland_window *parent;
+    struct wlr_xdg_toplevel_decoration_v1 *decoration;
 
     uint32_t window_id;
     uint32_t parent_id;
@@ -51,6 +52,9 @@ typedef struct wsland_window {
         struct wl_listener request_fullscreen;
         struct wl_listener request_configure;
         struct wl_listener request_activate;
+
+        struct wl_listener request_decoration_mode;
+        struct wl_listener decoration_destroy;
     } events;
 
     struct wl_list server_link;

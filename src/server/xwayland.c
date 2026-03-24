@@ -54,6 +54,12 @@ static struct wlr_box *fetch_geometry(wsland_window *window) {
     };
 }
 
+static bool fetch_activate(wsland_window *window) {
+    struct wlr_surface *focus_surface = window->server->seat->keyboard_state.focused_surface;
+    struct wlr_surface *current_surface = fetch_surface(window);
+    return focus_surface == current_surface;
+}
+
 static void window_resize(wsland_window *window, int width, int height) {
     wlr_xwayland_surface_configure(
         window->xwayland, window->xwayland->x, window->xwayland->y,
@@ -294,6 +300,7 @@ wsland_window_handle wsland_xwayland_window_impl = {
     .fetch_output = fetch_output,
     .fetch_surface = fetch_surface,
     .fetch_geometry = fetch_geometry,
+    .fetch_activate = fetch_activate,
 
     .window_resize = window_resize,
     .window_center = window_center,

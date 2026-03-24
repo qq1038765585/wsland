@@ -6,8 +6,14 @@
 
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_viewporter.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_server_decoration.h>
+#include <wlr/types/wlr_output_management_v1.h>
+#include <wlr/types/wlr_pointer_constraints_v1.h>
+#include <wlr/types/wlr_primary_selection_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
+#include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_data_device.h>
@@ -19,13 +25,6 @@
 #include <wlr/xwayland/xwayland.h>
 
 #include "wsland/server.h"
-
-#include "wlr/types/wlr_data_control_v1.h"
-#include "wlr/types/wlr_output_management_v1.h"
-#include "wlr/types/wlr_pointer_constraints_v1.h"
-#include "wlr/types/wlr_primary_selection_v1.h"
-#include "wlr/types/wlr_relative_pointer_v1.h"
-#include "wlr/types/wlr_xdg_output_v1.h"
 #include "wsland/utils/log.h"
 
 const struct wlr_pointer_impl wsland_pointer_impl = {
@@ -228,6 +227,11 @@ wsland_server *wsland_server_create(wsland_config *config) {
         LISTEN(&server->seat->events.request_set_selection, &server->events.request_set_selection, server->handle->seat_request_selection);
 
         // xdg shell event
+        LISTEN(&server->xdg_decoration_manager->events.new_toplevel_decoration, &server->events.new_toplevel_decoration, server->handle->new_toplevel_decoration);
+        wlr_server_decoration_manager_set_default_mode(
+            server->server_decoration_manager,
+            WLR_SERVER_DECORATION_MANAGER_MODE_SERVER
+        );
         wayland_event_init(server);
 
         // xwayland event
@@ -286,6 +290,7 @@ void wsland_server_destroy(wsland_server *server) {
         wl_list_remove(&server->events.new_input.link);
         wl_list_remove(&server->events.request_cursor.link);
         wl_list_remove(&server->events.request_set_selection.link);
+        wl_list_remove(&server->events.new_toplevel_decoration.link);
 
 
         wlr_scene_node_destroy(&server->scene->tree.node);
