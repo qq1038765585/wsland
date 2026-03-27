@@ -64,12 +64,12 @@ add_project_arguments(cc.get_supported_arguments([
  '-Wno-unused-parameter',
 ]), language: 'c')
 
-wlroots_project = subproject(
-    'wlroots',
-    default_options: [
-        'xwayland=enabled'
-    ]
-)
+#wlroots_project = subproject(
+#    'wlroots',
+#    default_options: [
+#        'xwayland=enabled'
+#    ]
+#)
 
 dep_wlroots = dependency('wlroots-0.18', version : '>=0.19.3') # wlroots_project.get_variable('wlroots')
 dep_winpr = dependency('winpr2', version : '>=2.4.0')
