@@ -4,11 +4,11 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
-    wslg-app.url = "github:qq1038765585/wslg-flake/main";
+    wslg-applist.url = "github:qq1038765585/wslg-flake/main";
     wslg-freerdp.url = "github:qq1038765585/freerdp-flake/working";
   };
 
-  outputs = { self, nixpkgs, wslg-app, wslg-freerdp }:
+  outputs = { self, nixpkgs, wslg-applist, wslg-freerdp }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
 
@@ -16,9 +16,8 @@
       packages = forAllSystems(system: let 
         pkgs = import nixpkgs { inherit system; };
 
-        wslgApplistLib = wslg-app.packages.${system}.wslg-applist;
-        wslgFreerdpLib = wslg-freerdp.packages.${system}.default;
-
+        wslg-applist-lib = wslg-applist.packages.${system}.wslg-applist;
+        wslg-freerdp-lib = wslg-freerdp.packages.${system}.default;
       in {
         default = pkgs.stdenv.mkDerivation {
             name = "wsland";
@@ -29,7 +28,7 @@
             ];
 
             buildInputs = with pkgs; [
-              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo
+              wslg-freerdp-lib wslg-applist-lib wayland wayland-protocols wayland-scanner pixman cairo
               libxcb libxcb-wm libxkbcommon libdrm xwayland openssl wlroots_0_19
             ];
           };
@@ -38,19 +37,19 @@
       devShells = forAllSystems(system: let 
         pkgs = import nixpkgs { inherit system; };
 
-        wslgApplistLib = wslg-app.packages.${system}.wslg-applist;
-        wslgFreerdpLib = wslg-freerdp.packages.${system}.default;
+        wslg-applist-lib = wslg-applist.packages.${system}.wslg-applist;
+        wslg-freerdp-lib = wslg-freerdp.packages.${system}.default;
       in {
         default = pkgs.mkShell {
             packages = with pkgs; [
               pkg-config meson ninja
-              wslgFreerdpLib wslgApplistLib wayland wayland-protocols wayland-scanner pixman cairo
+              wslg-freerdp-lib wslg-applist-lib wayland wayland-protocols wayland-scanner pixman cairo
               libxcb libxcb-wm libxkbcommon libdrm xwayland openssl wlroots_0_19
             ];
 
-            LD_LIBRARY_PATH = "${wslgFreerdpLib}/lib";
-            PKG_CONFIG_PATH = "${wslgFreerdpLib}/lib/pkgconfig";
-            NIX_CFLAGS_COMPILE = "-I${wslgFreerdpLib}/include/freerdp2 -I${wslgFreerdpLib}/include/winpr2";
+            LD_LIBRARY_PATH = "${wslg-freerdp-lib}/lib";
+            PKG_CONFIG_PATH = "${wslg-freerdp-lib}/lib/pkgconfig";
+            NIX_CFLAGS_COMPILE = "-I${wslg-freerdp-lib}/include/freerdp2 -I${wslg-freerdp-lib}/include/winpr2";
         };
       });
     };
