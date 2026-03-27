@@ -18,6 +18,7 @@
 #define RDP_MAX_MONITOR 16
 #define MAX_FREERDP_FDS 32
 #define MAX_FREERDP_KEYS 256
+#define WSLAND_SHARED_MEMORY_NAME_SIZE (32 + 4 + 2)
 
 #define DISPATCH(C, T, D, CB) { \
     wsland_peer *peer = (C)->custom; \
@@ -50,6 +51,8 @@ typedef struct wsland_peer_handle {
     void (*rail_client_activate)(bool free_only, void *user_data);
     void (*rail_client_sysparam)(bool free_only, void *user_data);
     void (*rdpgfx_frame_acknowledge)(bool free_only, void *user_data);
+    void (*gfxredir_frame_acknowledge)(struct wsland_peer *peer, uint64_t window_id);
+    void (*rail_peer_destroy)(struct wsland_peer *peer);
 } wsland_peer_handle;
 
 typedef struct wsland_freerdp {
@@ -63,6 +66,9 @@ typedef struct wsland_freerdp {
     void *rail_shell_context;
 
     bool use_gfxredir;
+    char *shared_memory_mount_point;
+    size_t shared_memory_mount_point_size;
+
     bool enable_window_snap_arrange;
     bool enable_window_shadow_remoting;
 
@@ -110,6 +116,13 @@ typedef struct wsland_peer {
     struct wsland_keyboard *keyboard;
     struct wsland_peer_handle *handle;
 } wsland_peer;
+
+typedef struct wsland_shared_memory {
+    int fd;
+    void *addr;
+    size_t size;
+    char name[WSLAND_SHARED_MEMORY_NAME_SIZE + 1];
+} wsland_shared_memory;
 
 typedef void (*dispatch_task_func_t)(bool free_only, void *data);
 

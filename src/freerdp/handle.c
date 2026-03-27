@@ -103,6 +103,47 @@ static void rail_sync_window_state(wsland_peer *peer) {
     }
 }
 
+static void rail_peer_destroy(wsland_peer *peer) {
+    if (peer->ctx_server_drdynvc) {
+        peer->ctx_server_drdynvc->Stop(peer->ctx_server_drdynvc);
+
+        drdynvc_server_context_free(peer->ctx_server_drdynvc);
+        peer->ctx_server_drdynvc = NULL;
+    }
+    if (peer->ctx_server_rail) {
+        peer->ctx_server_rail->Stop(peer->ctx_server_rail);
+
+        rail_server_context_free(peer->ctx_server_rail);
+        peer->ctx_server_rail = NULL;
+    }
+    if (peer->ctx_server_disp) {
+        peer->ctx_server_disp->Close(peer->ctx_server_disp);
+
+        disp_server_context_free(peer->ctx_server_disp);
+        peer->ctx_server_disp = NULL;
+    }
+    if (peer->ctx_server_rdpgfx) {
+        peer->ctx_server_rdpgfx->Close(peer->ctx_server_rdpgfx);
+
+        rdpgfx_server_context_free(peer->ctx_server_rdpgfx);
+        peer->activation_graphics_completed = false;
+        peer->ctx_server_rdpgfx = NULL;
+    }
+    if (peer->ctx_server_gfxredir) {
+        peer->ctx_server_gfxredir->Close(peer->ctx_server_gfxredir);
+
+        gfxredir_server_context_free(peer->ctx_server_gfxredir);
+        peer->activation_graphics_redirection_completed = false;
+        peer->ctx_server_gfxredir = NULL;
+    }
+    if (peer->ctx_server_applist) {
+        peer->ctx_server_applist->Close(peer->ctx_server_applist);
+
+        rdpapplist_server_context_free(peer->ctx_server_applist);
+        peer->ctx_server_applist = NULL;
+    }
+}
+
 static bool rail_peer_init(wsland_peer *peer) {
     peer->peer->settings->DesktopResize = FALSE; /* Server must not ask client to resize */
 
@@ -136,22 +177,8 @@ static bool rail_peer_init(wsland_peer *peer) {
     peer->acknowledged_frame_id = 0;
     return true;
 
-    failed:
-        if (peer->ctx_server_drdynvc) {
-            peer->ctx_server_drdynvc->Stop(peer->ctx_server_drdynvc);
-        }
-    if (peer->ctx_server_disp) {
-        peer->ctx_server_disp->Close(peer->ctx_server_disp);
-    }
-    if (peer->ctx_server_rdpgfx) {
-        peer->ctx_server_rdpgfx->Close(peer->ctx_server_rdpgfx);
-    }
-    if (peer->ctx_server_gfxredir) {
-        peer->ctx_server_gfxredir->Close(peer->ctx_server_gfxredir);
-    }
-    if (peer->ctx_server_applist) {
-        peer->ctx_server_applist->Close(peer->ctx_server_applist);
-    }
+failed:
+    rail_peer_destroy(peer);
     return false;
 }
 
@@ -457,6 +484,16 @@ static void rdpgfx_frame_acknowledge(bool free_only, void *user_data) {
     free(data);
 }
 
+static void gfxredir_frame_acknowledge(wsland_peer *peer, uint64_t window_id) {
+    wsland_window *window;
+    wl_list_for_each(window, &peer->freerdp->adapter->server->windows, server_link) {
+        if (window->window_id == window_id) {
+            window->update_pending = false;
+            break;
+        }
+    }
+}
+
 wsland_peer_handle wsland_peer_handle_impl = {
     .xf_peer_adjust_monitor_layout = xf_peer_adjust_monitor_layout,
     .xf_peer_capabilities = xf_peer_capabilities,
@@ -473,6 +510,8 @@ wsland_peer_handle wsland_peer_handle_impl = {
     .rail_client_activate = rail_client_activate,
     .rail_client_sysparam = rail_client_sysparam,
     .rdpgfx_frame_acknowledge = rdpgfx_frame_acknowledge,
+    .gfxredir_frame_acknowledge = gfxredir_frame_acknowledge,
+    .rail_peer_destroy = rail_peer_destroy,
 };
 
 void wsland_peer_handle_init(wsland_peer *peer) {

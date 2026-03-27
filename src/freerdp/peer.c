@@ -1,4 +1,4 @@
-// ReSharper disable CppDeprecatedEntity
+// ReSharper disable All
 #include <unistd.h>
 #include <pthread.h>
 #include <freerdp/channels/wtsvc.h>
@@ -36,6 +36,7 @@ static void rdp_peer_context_free(freerdp_peer *rdp_peer, wsland_peer *peer) {
             wl_event_source_remove(peer->sources[i]);
         }
     }
+    peer->handle->rail_peer_destroy(peer);
 
     if (peer->dispatch_event_source) {
         wl_event_source_remove(peer->dispatch_event_source);

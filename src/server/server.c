@@ -1,5 +1,11 @@
+// ReSharper disable All
+#define GNU_SOURCE
 #include <assert.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <sys/un.h>
+#include <sys/socket.h>
+#include <bits/socket.h>
 
 #include <wlr/backend/headless.h>
 #include <wlr/render/allocator.h>
@@ -262,7 +268,38 @@ create_failed:
     return NULL;
 }
 
+static void wslg_notify(void) {
+    struct sockaddr_un addr = {0};
+    socklen_t size, name_size;
+
+    char *socket_path = getenv("WSLGD_NOTIFY_SOCKET");
+    if (!socket_path) {
+        return;
+    }
+
+    int socket_fd = socket(PF_LOCAL, SOCK_SEQPACKET, 0);
+    if (socket_fd < 0) {
+        return;
+    }
+
+    addr.sun_family = AF_LOCAL;
+    name_size = snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", socket_path) + 1;
+    size = offsetof(struct sockaddr_un, sun_path) + name_size;
+
+    int fd = connect(socket_fd, (struct sockaddr *)&addr, size);
+    if (fd < 0) {
+        goto close_socket_fd;
+    }
+
+    close(fd);
+
+close_socket_fd:
+    close(socket_fd);
+}
+
 void wsland_server_running(wsland_server *server) {
+    wslg_notify();
+
     setenv("DISPLAY", server->xwayland->display_name, true);
     setenv("WAYLAND_DISPLAY", server->socket_name, true);
     wsland_log(SERVER, INFO, "running wayland compositor [ DISPLAY=%s, WAYLAND_DISPLAY=%s ]", server->xwayland->display_name, server->socket_name);

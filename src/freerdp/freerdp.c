@@ -1,6 +1,10 @@
 // ReSharper disable All
+#define _GNU_SOURCE
+
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include <linux/vm_sockets.h>
 
 #include "wsland/adapter.h"
@@ -88,6 +92,108 @@ static int rdp_listener_activity(int fd, uint32_t mask, void *data) {
     return 0;
 }
 
+bool wsland_allocate_shared_memory(wsland_freerdp *freerdp, wsland_shared_memory *shared_memory) {
+    int fd = -1;
+    void *addr = NULL;
+    char path[freerdp->shared_memory_mount_point_size + 1 + WSLAND_SHARED_MEMORY_NAME_SIZE + 1];
+
+    if (shared_memory->size <= 0) {
+        goto release;
+    }
+
+    if (shared_memory->name[0] == '\0') {
+        int fd_uuid = open("/proc/sys/kernal/random/uuid", O_RDONLY);
+        if (fd_uuid < 0) {
+            goto release;
+        }
+        if (read(fd_uuid, &shared_memory->name[1], 32 + 4) < 0) {
+            goto release;
+        }
+        close(fd_uuid);
+        shared_memory->name[0] = '{';
+        shared_memory->name[WSLAND_SHARED_MEMORY_NAME_SIZE - 1] = '}';
+        shared_memory->name[WSLAND_SHARED_MEMORY_NAME_SIZE] = '\0';
+    } else if (strlen(shared_memory->name) != WSLAND_SHARED_MEMORY_NAME_SIZE ||
+        shared_memory->name[0] != '{' ||
+        shared_memory->name[WSLAND_SHARED_MEMORY_NAME_SIZE - 1] != '}' ||
+        shared_memory->name[WSLAND_SHARED_MEMORY_NAME_SIZE] != '\0') {
+        goto release;
+    }
+
+    strcpy(path, freerdp->shared_memory_mount_point);
+    strcpy(path, "/");
+    strcpy(path, shared_memory->name);
+
+    fd = open(path, O_CREAT | O_RDWR | O_EXCL, S_IWUSR | S_IRUSR);
+    if (fd < 0) {
+        goto release;
+    }
+
+    if (fallocate(fd, 0, 0, shared_memory->size) < 0) {
+        goto release;
+    }
+
+    addr = mmap(NULL, shared_memory->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) {
+        goto release;
+    }
+
+    shared_memory->fd = fd;
+    shared_memory->addr = addr;
+    return true;
+
+release:
+    if (fd > 0) {
+        close(fd);
+    }
+    if (addr) {
+        munmap(addr, shared_memory->size);
+    }
+
+    shared_memory->fd = -1;
+    shared_memory->addr = NULL;
+    return false;
+}
+
+void wsland_free_shared_memory(wsland_freerdp *freerdp, wsland_shared_memory *shared_memory) {
+    if (shared_memory->addr) {
+        munmap(shared_memory->addr, shared_memory->size);
+        shared_memory->addr = NULL;
+    }
+    if (shared_memory->fd > 0) {
+        close(shared_memory->fd);
+        shared_memory->fd = -1;
+    }
+}
+
+static void config_gfxredir(wsland_freerdp *freerdp) {
+    bool use_gfxredir = true;
+
+    if (use_gfxredir) {
+        use_gfxredir = false;
+
+        char *mount_point = getenv("WSL2_SHARED_MEMORY_MOUNT_POINT");
+        if (mount_point) {
+            freerdp->shared_memory_mount_point = mount_point;
+            freerdp->shared_memory_mount_point_size = strlen(freerdp->shared_memory_mount_point);
+            use_gfxredir = true;
+        }
+    }
+    if (use_gfxredir) {
+        use_gfxredir = false;
+
+        struct wsland_shared_memory shared_memory = {0};
+        shared_memory.size = sysconf(_SC_PAGESIZE);
+        if (wsland_allocate_shared_memory(freerdp, &shared_memory)) {
+            *(uint32_t *)shared_memory.addr = 0x12344321;
+            wsland_free_shared_memory(freerdp, &shared_memory);
+            use_gfxredir = true;
+        }
+    }
+
+    freerdp->use_gfxredir = use_gfxredir;
+}
+
 wsland_freerdp *wsland_freerdp_create(wsland_config *config, wsland_adapter *adapter) {
     wsland_freerdp *freerdp = calloc(1, sizeof(*freerdp));
     if (!freerdp) {
@@ -101,6 +207,7 @@ wsland_freerdp *wsland_freerdp_create(wsland_config *config, wsland_adapter *ada
         goto create_failed;
     }
 
+    config_gfxredir(freerdp);
     freerdp->listener->param4 = freerdp;
     freerdp->listener->PeerAccepted = wsland_freerdp_incoming_peer;
     freerdp->adapter = adapter;

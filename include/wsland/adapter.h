@@ -25,6 +25,13 @@ typedef struct wsland_window {
     int scale_w, scale_h;
     char *title;
 
+    uint32_t pool_id;
+    uint32_t buffer_id;
+    void *window_buffer;
+    int buffer_width, buffer_height;
+    wsland_shared_memory shared_memory;
+    bool update_pending;
+
     struct wlr_box damage;
     struct wlr_buffer *buffer;
     struct wlr_texture *texture;
@@ -66,6 +73,8 @@ typedef struct wsland_window {
 } wsland_window;
 
 
+void wsland_free_shared_memory(wsland_freerdp *freerdp, wsland_shared_memory *shared_memory);
+bool wsland_allocate_shared_memory(wsland_freerdp *freerdp, wsland_shared_memory *shared_memory);
 void wsland_adapter_frame_for_peer(wsland_peer *peer, RDPGFX_FRAME_ACKNOWLEDGE_PDU frame_acknowledge);
 
 void wsland_adapter_work_area_for_peer(wsland_peer *peer, struct wlr_box area);
