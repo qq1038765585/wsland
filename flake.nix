@@ -16,8 +16,8 @@
       packages = forAllSystems(system: let 
         pkgs = import nixpkgs { inherit system; };
 
-        wslg-applist-lib = wslg-applist.packages.${system}.wslg-applist;
         wslg-freerdp-lib = wslg-freerdp.packages.${system}.default;
+        wslg-applist-lib = wslg-applist.packages.${system}.wslg-applist;
       in {
         default = pkgs.stdenv.mkDerivation {
             name = "wsland";
@@ -47,8 +47,8 @@
               libxcb libxcb-wm libxkbcommon libdrm xwayland openssl wlroots_0_19
             ];
 
-            LD_LIBRARY_PATH = "${wslg-freerdp-lib}/lib";
-            PKG_CONFIG_PATH = "${wslg-freerdp-lib}/lib/pkgconfig";
+            LD_LIBRARY_PATH = "${wslg-freerdp-lib}/lib:${wslg-applist-lib}/lib";
+            PKG_CONFIG_PATH = "${wslg-freerdp-lib}/lib/pkgconfig:${wslg-applist-lib}/lib/pkgconfig";
             NIX_CFLAGS_COMPILE = "-I${wslg-freerdp-lib}/include/freerdp2 -I${wslg-freerdp-lib}/include/winpr2";
         };
       });

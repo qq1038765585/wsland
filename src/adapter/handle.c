@@ -658,7 +658,7 @@ static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
         wl_list_for_each(window, &output->server->windows, server_link) {
             wsland_window_detection(output, adapter, window);
 
-            if (!wlr_box_empty(&window->damage) && window->window_buffer) {
+            if (!wlr_box_empty(&window->damage) && (!adapter->freerdp->use_gfxredir || window->window_buffer)) {
                 struct frame_node *node = wl_array_add(&frame_nodes, sizeof(*node));
                 node->window = window;
             }
