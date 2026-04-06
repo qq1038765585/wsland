@@ -31,7 +31,7 @@ typedef enum wsland_cursor_mode {
 typedef struct wsland_window_handle {
     char* (*fetch_title)(struct wsland_window *window);
     bool (*fetch_activate)(struct wsland_window *window);
-    struct wlr_box* (*fetch_geometry)(struct wsland_window *window);
+    struct wlr_box (*fetch_geometry)(struct wsland_window *window);
     struct wlr_surface* (*fetch_surface)(struct wsland_window *window);
     struct wsland_window* (*fetch_parent)(struct wsland_window *window);
     struct wsland_output* (*fetch_output)(struct wsland_window *window);
@@ -56,9 +56,11 @@ typedef struct wsland_server_handle {
     void (*cursor_button)(struct wl_listener *listener, void *data);
     void (*cursor_axis)(struct wl_listener *listener, void *data);
     void (*cursor_frame)(struct wl_listener *listener, void *data);
+    void (*request_set_shape)(struct wl_listener *listener, void *data);
     void (*seat_request_cursor)(struct wl_listener *listener, void *data);
     void (*seat_request_selection)(struct wl_listener *listener, void *data);
     void (*new_toplevel_decoration)(struct wl_listener *listener, void *data);
+    void (*new_virtual_pointer)(struct wl_listener *listener, void *data);
 
     void (*reset_server_cursor)(struct wsland_server *server);
     void (*begin_window_interactive)(struct wsland_window *window, wsland_cursor_mode mode, uint32_t edges);
@@ -113,26 +115,26 @@ typedef struct wsland_server {
     struct wlr_allocator *allocator;
     struct wlr_compositor *compositor;
     struct wlr_subcompositor *subcompositor;
+    struct wlr_xcursor_manager *cursor_manager;
     struct wlr_data_device_manager *data_device_manager;
     struct wlr_data_control_manager_v1 *data_control_manager;
-    struct wlr_primary_selection_v1_device_manager *primary_selection_device_manager;
+    struct wlr_cursor_shape_manager_v1* cursor_shape_manager;
+    struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+    struct wlr_virtual_pointer_manager_v1 *virtual_pointer_manager;
     struct wlr_server_decoration_manager *server_decoration_manager;
     struct wlr_relative_pointer_manager_v1 *relative_pointer_manager;
-    struct wlr_xdg_decoration_manager_v1 *xdg_decoration_manager;
+    struct wlr_primary_selection_v1_device_manager *primary_selection_device_manager;
+    struct wlr_xdg_output_manager_v1 *xdg_output_manager_v1;
     struct wlr_pointer_constraints_v1 *pointer_constraints;
-    struct wlr_xcursor_manager *cursor_manager;
+    struct wlr_output_manager_v1 *output_manager_v1;
+    struct wlr_scene_output_layout *scene_layout;
+    struct wlr_output_layout *output_layout;
     struct wlr_viewporter *viewporter;
     struct wlr_xdg_shell *xdg_shell;
+    struct wlr_xwayland *xwayland;
     struct wlr_cursor *cursor;
     struct wlr_scene *scene;
     struct wlr_seat *seat;
-
-    struct wlr_xwayland *xwayland;
-
-    struct wlr_output_layout *output_layout;
-    struct wlr_scene_output_layout *scene_layout;
-    struct wlr_xdg_output_manager_v1 *xdg_output_manager_v1;
-    struct wlr_output_manager_v1 *output_manager_v1;
 
     struct wl_list outputs;
     struct wl_list keyboards;
@@ -167,9 +169,11 @@ typedef struct wsland_server {
         struct wl_listener cursor_motion;
         struct wl_listener cursor_button;
         struct wl_listener request_cursor;
+        struct wl_listener request_set_shape;
         struct wl_listener request_set_selection;
         struct wl_listener cursor_motion_absolute;
         struct wl_listener new_toplevel_decoration;
+        struct wl_listener new_virtual_pointer;
 
         struct wl_listener wayland_new_toplevel;
 

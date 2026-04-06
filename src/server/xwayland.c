@@ -1,5 +1,6 @@
 // ReSharper disable All
 #include <wlr/xwayland/xwayland.h>
+#include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
@@ -47,8 +48,8 @@ static struct wlr_surface *fetch_surface(wsland_window *window) {
     return window->xwayland->surface;
 }
 
-static struct wlr_box *fetch_geometry(wsland_window *window) {
-    return &(struct wlr_box) {
+static struct wlr_box fetch_geometry(wsland_window *window) {
+    return (struct wlr_box) {
         window->xwayland->x, window->xwayland->y,
         window->xwayland->width, window->xwayland->height
     };
@@ -85,12 +86,12 @@ static void window_center(wsland_window *window) {
 }
 
 static void window_motion(wsland_window *window,  int pos_x, int pos_y) {
+    wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
+
     wlr_xwayland_surface_configure(
         window->xwayland, pos_x, pos_y,
         window->xwayland->width, window->xwayland->height
     );
-
-    wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
 }
 
 static void window_activate(wsland_window *window, bool enabled) {
@@ -159,55 +160,60 @@ static bool window_resize_cannot(wsland_window *window) {
     return false;
 }
 
-static void unmanaged_map(struct wl_listener *listener, void *data) {
+static void unmanaged_map(struct wl_listener *listener, void *user_data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.map);
     unmanaged->parent = unmanaged->handle->fetch_parent(unmanaged);
 
-    unmanaged->tree = wlr_scene_subsurface_tree_create(&unmanaged->server->scene->tree, unmanaged->xwayland->surface);
-    unmanaged->tree->node.data = unmanaged->xwayland->surface->data = unmanaged;
-
-    int pos_x = unmanaged->xwayland->x;
-    int pos_y = unmanaged->xwayland->y;
-    if (unmanaged->parent) {
-        pos_x += (unmanaged->parent->current.x - unmanaged->xwayland->parent->x);
-        pos_y += (unmanaged->parent->current.y - unmanaged->xwayland->parent->y);
+    if (!unmanaged->parent) {
+        wsland_window *parent;
+        wl_list_for_each(parent, &unmanaged->server->windows, server_link) {
+            if (parent->type == XWAYLAND && parent->xwayland->pid == unmanaged->xwayland->pid) {
+                unmanaged->parent = parent;
+                break;
+            }
+        }
     }
-    wlr_scene_node_set_position(&unmanaged->tree->node, pos_x, pos_y);
-    wl_list_insert(&unmanaged->server->windows, &unmanaged->server_link);
+
+    if (unmanaged->parent) {
+        unmanaged->tree = wlr_scene_subsurface_tree_create(unmanaged->parent->tree, unmanaged->xwayland->surface);
+        unmanaged->tree->node.data = unmanaged->xwayland->surface->data = unmanaged;
+
+        int pos_x = unmanaged->xwayland->x - unmanaged->parent->xwayland->x;
+        int pos_y = unmanaged->xwayland->y - unmanaged->parent->xwayland->y;
+        wlr_scene_node_set_position(&unmanaged->tree->node, pos_x, pos_y);
+    }
 }
 
-static void unmanaged_unmap(struct wl_listener *listener, void *data) {
+static void unmanaged_unmap(struct wl_listener *listener, void *user_data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.unmap);
 
     wlr_scene_node_destroy(&unmanaged->tree->node);
     wl_signal_emit(&unmanaged->server->events.wsland_window_destroy, unmanaged);
-    wl_list_remove(&unmanaged->parent_link);
-    wl_list_remove(&unmanaged->server_link);
 }
 
-static void unmanaged_associate(struct wl_listener *listener, void *data) {
+static void unmanaged_associate(struct wl_listener *listener, void *user_data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.associate);
 
     LISTEN(&unmanaged->xwayland->surface->events.map, &unmanaged->events.map, unmanaged_map);
     LISTEN(&unmanaged->xwayland->surface->events.unmap, &unmanaged->events.unmap, unmanaged_unmap);
 }
 
-static void unmanaged_dissociate(struct wl_listener *listener, void *data) {
+static void unmanaged_dissociate(struct wl_listener *listener, void *user_data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.dissociate);
 
     wl_list_remove(&unmanaged->events.map.link);
     wl_list_remove(&unmanaged->events.unmap.link);
 }
 
-static void unmanaged_request_configure(struct wl_listener *listener, void *data) {
+static void unmanaged_request_configure(struct wl_listener *listener, void *user_data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.request_configure);
-    struct wlr_xwayland_surface_configure_event *event = data;
+    struct wlr_xwayland_surface_configure_event *event = user_data;
 
-    wlr_xwayland_surface_configure(unmanaged->xwayland, event->x, event->y, event->width, event->height);
     wlr_scene_node_set_position(&unmanaged->tree->node, event->x, event->y);
+    wlr_xwayland_surface_configure(unmanaged->xwayland, event->x, event->y, event->width, event->height);
 }
 
-static void unmanaged_destroy(struct wl_listener *listener, void *data) {
+static void unmanaged_destroy(struct wl_listener *listener, void *user_data) {
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.destroy);
 
     wl_signal_emit(&unmanaged->server->events.wsland_window_destroy, unmanaged);
@@ -215,11 +221,44 @@ static void unmanaged_destroy(struct wl_listener *listener, void *data) {
     wl_list_remove(&unmanaged->events.dissociate.link);
     wl_list_remove(&unmanaged->events.associate.link);
     wl_list_remove(&unmanaged->events.destroy.link);
-    wl_list_remove(&unmanaged->children);
     free(unmanaged);
 }
 
-static void xwayland_map(struct wl_listener *listener, void *data) {
+static bool window_wants_floating(wsland_window *window) {
+    if (window->xwayland->parent) {
+        return true;
+    }
+    if (window->xwayland->modal) {
+        return true;
+    }
+
+    if (wlr_xwayland_surface_has_window_type(window->xwayland, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_DIALOG)
+        || wlr_xwayland_surface_has_window_type(window->xwayland, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_SPLASH)
+        || wlr_xwayland_surface_has_window_type(window->xwayland, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_TOOLBAR)
+        || wlr_xwayland_surface_has_window_type(window->xwayland, WLR_XWAYLAND_NET_WM_WINDOW_TYPE_UTILITY)) {
+        return true;
+    }
+
+    xcb_size_hints_t* size_hints = window->xwayland->size_hints;
+    if (size_hints && size_hints->min_width > 0 && size_hints->min_height > 0
+        && (size_hints->max_width == size_hints->min_width || size_hints->max_height == size_hints->min_height)) {
+        return true;
+    }
+
+    return false;
+}
+
+static wsland_window *fetch_overlay_window(wsland_server *server) {
+    wsland_window *overlay;
+    wl_list_for_each(overlay, &server->windows, server_link) {
+        if (overlay->type == XWAYLAND && window_wants_floating(overlay)) {
+            return overlay;
+        }
+    }
+    return NULL;
+}
+
+static void xwayland_map(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.map);
     window->parent = window->handle->fetch_parent(window);
 
@@ -231,10 +270,15 @@ static void xwayland_map(struct wl_listener *listener, void *data) {
         wl_list_insert(&window->parent->children, &window->parent_link);
     }
 
-    wl_list_insert(&window->server->windows, &window->server_link);
+    wsland_window *overlay;
+    if (!window_wants_floating(window) && (overlay = fetch_overlay_window(window->server))) {
+        wl_list_insert(overlay->server_link.next, &window->server_link);
+    } else {
+        wl_list_insert(&window->server->windows, &window->server_link);
+    }
 }
 
-static void xwayland_unmap(struct wl_listener *listener, void *data) {
+static void xwayland_unmap(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.unmap);
 
     wlr_scene_node_destroy(&window->tree->node);
@@ -243,36 +287,45 @@ static void xwayland_unmap(struct wl_listener *listener, void *data) {
     wl_list_remove(&window->server_link);
 }
 
-static void xwayland_associate(struct wl_listener *listener, void *data) {
+static void xwayland_associate(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.associate);
 
     LISTEN(&window->xwayland->surface->events.map, &window->events.map, xwayland_map);
     LISTEN(&window->xwayland->surface->events.unmap, &window->events.unmap, xwayland_unmap);
 }
 
-static void xwayland_dissociate(struct wl_listener *listener, void *data) {
+static void xwayland_set_hints(struct wl_listener *listener, void *user_data) {
+    wsland_window *window = wl_container_of(listener, window, events.set_hints);
+
+    if (!window->xwayland->hints) {
+        return;
+    }
+    xcb_icccm_wm_hints_get_urgency(window->xwayland->hints);
+}
+
+static void xwayland_dissociate(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.dissociate);
 
     wl_list_remove(&window->events.unmap.link);
     wl_list_remove(&window->events.map.link);
 }
 
-static void xwayland_request_configure(struct wl_listener *listener, void *data) {
+static void xwayland_request_configure(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.request_configure);
-    struct wlr_xwayland_surface_configure_event *event = data;
+    struct wlr_xwayland_surface_configure_event *event = user_data;
 
     if (!window->xwayland->surface || !window->xwayland->surface->mapped) {
         wlr_xwayland_surface_configure(window->xwayland, event->x, event->y, event->width, event->height);
     }
 }
 
-static void xwayland_request_activate(struct wl_listener *listener, void *data) {
+static void xwayland_request_activate(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.request_activate);
 
     window->server->handle->dispatch_window_focus(window);
 }
 
-static void xwayland_request_maximize(struct wl_listener *listener, void *data) {
+static void xwayland_request_maximize(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.request_maximize);
 
     if (window->xwayland->surface) {
@@ -280,7 +333,7 @@ static void xwayland_request_maximize(struct wl_listener *listener, void *data) 
     }
 }
 
-static void xwayland_destroy(struct wl_listener *listener, void *data) {
+static void xwayland_destroy(struct wl_listener *listener, void *user_data) {
     wsland_window *window = wl_container_of(listener, window, events.destroy);
 
     wl_signal_emit(&window->server->events.wsland_window_destroy, window);
@@ -289,6 +342,7 @@ static void xwayland_destroy(struct wl_listener *listener, void *data) {
     wl_list_remove(&window->events.request_activate.link);
     wl_list_remove(&window->events.dissociate.link);
     wl_list_remove(&window->events.associate.link);
+    wl_list_remove(&window->events.set_hints.link);
     wl_list_remove(&window->events.destroy.link);
     wl_list_remove(&window->children);
     free(window);
@@ -327,9 +381,6 @@ static wsland_window *create_unmanaged(wsland_server *server, struct wlr_xwaylan
     LISTEN(&xwayland_surface->events.dissociate, &unmanaged->events.dissociate, unmanaged_dissociate);
     LISTEN(&xwayland_surface->events.associate, &unmanaged->events.associate, unmanaged_associate);
     LISTEN(&xwayland_surface->events.destroy, &unmanaged->events.destroy, unmanaged_destroy);
-    wl_list_init(&unmanaged->parent_link);
-    wl_list_init(&unmanaged->server_link);
-    wl_list_init(&unmanaged->children);
     return unmanaged;
 }
 
@@ -347,6 +398,7 @@ static wsland_window *create_xwayland_window(wsland_server *server, struct wlr_x
     LISTEN(&xwayland_surface->events.request_maximize, &window->events.request_maximize, xwayland_request_maximize);
     LISTEN(&xwayland_surface->events.dissociate, &window->events.dissociate, xwayland_dissociate);
     LISTEN(&xwayland_surface->events.associate, &window->events.associate, xwayland_associate);
+    LISTEN(&xwayland_surface->events.set_hints, &window->events.set_hints, xwayland_set_hints);
     LISTEN(&xwayland_surface->events.destroy, &window->events.destroy, xwayland_destroy);
     wl_list_init(&window->parent_link);
     wl_list_init(&window->server_link);
@@ -354,7 +406,7 @@ static wsland_window *create_xwayland_window(wsland_server *server, struct wlr_x
     return window;
 }
 
-static void xwayland_ready(struct wl_listener *listener, void *data) {
+static void xwayland_ready(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.xwayland_ready);
     wlr_xwayland_set_seat(server->xwayland, server->seat);
 
@@ -367,11 +419,20 @@ static void xwayland_ready(struct wl_listener *listener, void *data) {
     }
     wlr_xwayland_set_workareas(server->xwayland, workareas, num_workareas);
     free(workareas);
+
+    struct wlr_xcursor *xcursor;
+    if ((xcursor = wlr_xcursor_manager_get_xcursor(server->cursor_manager, "default", 1))) {
+        wlr_xwayland_set_cursor(
+            server->xwayland, xcursor->images[0]->buffer,
+            xcursor->images[0]->width * 4, xcursor->images[0]->width,
+            xcursor->images[0]->height, xcursor->images[0]->hotspot_x, xcursor->images[0]->hotspot_y
+        );
+    }
 }
 
-static void xwayland_new_toplevel(struct wl_listener *listener, void *data) {
+static void xwayland_new_toplevel(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.xwayland_new_toplevel);
-    struct wlr_xwayland_surface *xwayland_surface = data;
+    struct wlr_xwayland_surface *xwayland_surface = user_data;
 
     if (xwayland_surface->override_redirect) {
         create_unmanaged(server, xwayland_surface);

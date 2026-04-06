@@ -1,3 +1,5 @@
+// ReSharper disable All
+#include <cairo.h>
 #include <unistd.h>
 #include <linux/input-event-codes.h>
 
@@ -5,11 +7,14 @@
 #include <wlr/render/swapchain.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
+#include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/render/pixman.h>
 #include <wlr/util/edges.h>
 #include <wlr/xcursor.h>
 
@@ -26,8 +31,8 @@ static void dispatch_window_focus(wsland_window *window) {
     wsland_server *server = window->server;
     struct wlr_seat *seat = server->seat;
     struct wlr_surface *prev_surface = seat->keyboard_state.focused_surface;
-    struct wlr_surface *cur_surface = window->handle->fetch_surface(window);
-    if (prev_surface == cur_surface) {
+    struct wlr_surface *current_surface = window->handle->fetch_surface(window);
+    if (prev_surface == current_surface) {
         return;
     }
 
@@ -44,7 +49,7 @@ static void dispatch_window_focus(wsland_window *window) {
 
     if (keyboard != NULL) {
         wlr_seat_keyboard_notify_enter(
-            seat, cur_surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers
+            seat, current_surface, keyboard->keycodes, keyboard->num_keycodes, &keyboard->modifiers
         );
     }
 
@@ -82,9 +87,9 @@ static void output_destroy(struct wl_listener *listener, void *data) {
     wl_list_remove(&output->events.frame.link);
 }
 
-static void server_new_output(struct wl_listener *listener, void *data) {
+static void server_new_output(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.new_output);
-    wsland_output *output = data;
+    wsland_output *output = user_data;
     output->server = server;
 
     wlr_output_init_render(&output->output, server->allocator, server->renderer);
@@ -176,13 +181,16 @@ static void keyboard_handle_key(struct wl_listener *listener, void *data) {
     bool handled = false;
     uint32_t modifiers = wlr_keyboard_get_modifiers(&keyboard->keyboard);
     if (modifiers & WLR_MODIFIER_ALT && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-        for (int i = 0; i < nsyms; i++) {
-            handled = alt_keybinding(server, syms[i]);
+        if (modifiers & WLR_MODIFIER_SHIFT) {
+            for (int i = 0; i < nsyms; i++) {
+                handled = alt_shift_keybinding(server, syms[i]);
+            }
         }
-    }
-    if (modifiers & WLR_MODIFIER_ALT && modifiers & WLR_MODIFIER_SHIFT && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-        for (int i = 0; i < nsyms; i++) {
-            handled = alt_shift_keybinding(server, syms[i]);
+
+        if (!handled) {
+            for (int i = 0; i < nsyms; i++) {
+                handled = alt_keybinding(server, syms[i]);
+            }
         }
     }
 
@@ -263,13 +271,13 @@ static void begin_window_interactive(wsland_window *window, wsland_cursor_mode m
     }
     else {
         if (edges == WLR_EDGE_NONE) {
-            if (server->cursor->x < window->current.x + window->current.width / 2) {
+            if ((int) server->cursor->x < window->current.x + window->current.width / 2) {
                 edges |= WLR_EDGE_LEFT;
             }
             else {
                 edges |= WLR_EDGE_RIGHT;
             }
-            if (server->cursor->y < window->current.y + window->current.height / 2) {
+            if ((int) server->cursor->y < window->current.y + window->current.height / 2) {
                 edges |= WLR_EDGE_TOP;
             }
             else {
@@ -281,14 +289,14 @@ static void begin_window_interactive(wsland_window *window, wsland_cursor_mode m
         server->wsland_cursor.s_hotspot_y = server->wsland_cursor.b_hotspot_y;
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, wlr_xcursor_get_resize_name(edges));
 
-        struct wlr_box *geo_box = window->handle->fetch_geometry(window);
+        struct wlr_box geo_box = window->handle->fetch_geometry(window);
 
-        double border_x = window->tree->node.x + geo_box->x + (edges & WLR_EDGE_RIGHT ? geo_box->width : 0);
-        double border_y = window->tree->node.y + geo_box->y + (edges & WLR_EDGE_BOTTOM ? geo_box->height : 0);
+        double border_x = window->tree->node.x + geo_box.x + (edges & WLR_EDGE_RIGHT ? geo_box.width : 0);
+        double border_y = window->tree->node.y + geo_box.y + (edges & WLR_EDGE_BOTTOM ? geo_box.height : 0);
         server->grab.x = server->cursor->x - border_x;
         server->grab.y = server->cursor->y - border_y;
 
-        server->grab.geobox = *geo_box;
+        server->grab.geobox = geo_box;
         server->grab.geobox.x += window->tree->node.x;
         server->grab.geobox.y += window->tree->node.y;
         server->move.resize_edges = edges;
@@ -347,8 +355,8 @@ static void process_cursor_move(wsland_server *server) {
         return;
     }
 
-    int pos_x = server->cursor->x - server->grab.x;
-    int pos_y = server->cursor->y - server->grab.y;
+    int pos_x = (int)(server->cursor->x - server->grab.x);
+    int pos_y = (int)(server->cursor->y - server->grab.y);
     window->handle->window_motion(window, pos_x, pos_y);
 }
 
@@ -359,8 +367,8 @@ static void process_cursor_resize(wsland_server *server) {
         return;
     }
 
-    double border_x = server->cursor->x - server->grab.x;
-    double border_y = server->cursor->y - server->grab.y;
+    int border_x = (int)(server->cursor->x - server->grab.x);
+    int border_y = (int)(server->cursor->y - server->grab.y);
     int new_left = server->grab.geobox.x;
     int new_right = server->grab.geobox.x + server->grab.geobox.width;
     int new_top = server->grab.geobox.y;
@@ -391,14 +399,14 @@ static void process_cursor_resize(wsland_server *server) {
         }
     }
 
-    struct wlr_box *geo_box = window->handle->fetch_geometry(window);
-    wlr_scene_node_set_position(&window->tree->node, new_left - geo_box->x, new_top - geo_box->y);
+    struct wlr_box geo_box = window->handle->fetch_geometry(window);
+    wlr_scene_node_set_position(&window->tree->node, new_left - geo_box.x, new_top - geo_box.y);
 
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
     {
-        new_width = MAX(1 - geo_box->x, new_width);
-        new_height = MAX(1 - geo_box->y, new_height);
+        new_width = MAX(1 - geo_box.x, new_width);
+        new_height = MAX(1 - geo_box.y, new_height);
 
         if (window->handle) {
             wsland_output *output = window->handle->fetch_output(window);
@@ -432,8 +440,8 @@ static void process_cursor_motion(wsland_server *server, uint32_t time) {
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "default");
     }
     if (surface) {
-        wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(seat, time, sx, sy);
+        wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
     }
     else {
         wlr_seat_pointer_clear_focus(seat);
@@ -469,9 +477,9 @@ static void decoration_destroy(struct wl_listener *listener, void *data) {
     wl_list_remove(&window->events.request_decoration_mode.link);
 }
 
-static void server_new_toplevel_decoration(struct wl_listener *listener, void *data) {
+static void server_new_toplevel_decoration(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.new_toplevel_decoration);
-    struct wlr_xdg_toplevel_decoration_v1 *decoration = data;
+    struct wlr_xdg_toplevel_decoration_v1 *decoration = user_data;
 
     struct wlr_scene_tree *tree = decoration->toplevel->base->data;
     if (tree && tree->node.data) {
@@ -480,6 +488,19 @@ static void server_new_toplevel_decoration(struct wl_listener *listener, void *d
 
         LISTEN(&decoration->events.request_mode, &window->events.request_decoration_mode, request_decoration_mode);
         LISTEN(&decoration->events.destroy, &window->events.decoration_destroy, decoration_destroy);
+    }
+}
+
+static void server_new_virtual_pointer(struct wl_listener *listener, void *user_data) {
+    wsland_server *server = wl_container_of(listener, server, events.new_virtual_pointer);
+
+    struct wlr_virtual_pointer_v1_new_pointer_event *event = user_data;
+    struct wlr_input_device *device = &event->new_pointer->pointer.base;
+
+    wlr_cursor_attach_input_device(server->cursor, device);
+
+    if (event->suggested_output) {
+        wlr_cursor_map_input_to_output(server->cursor, device, event->suggested_output);
     }
 }
 
@@ -544,7 +565,6 @@ static void server_cursor_frame(struct wl_listener *listener, void *data) {
     wsland_server *server = wl_container_of(listener, server, events.cursor_frame);
 
     wlr_seat_pointer_notify_frame(server->seat);
-    wl_signal_emit(&server->events.wsland_cursor_frame, server);
 }
 
 static void cursor_surface_destroy(struct wl_listener *listener, void *user_data) {
@@ -557,12 +577,17 @@ static void cursor_surface_destroy(struct wl_listener *listener, void *user_data
     }
 }
 
-static void seat_request_cursor(struct wl_listener *listener, void *data) {
+static void seat_request_cursor(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.request_cursor);
-    struct wlr_seat_pointer_request_set_cursor_event *event = data;
+    struct wlr_seat_pointer_request_set_cursor_event *event = user_data;
 
-    struct wlr_seat_client *focused_client = server->seat->pointer_state.focused_client;
-    if (focused_client == event->seat_client) {
+    wsland_log(SERVER, ERROR, "set cursor");
+
+    if (server->move.mode != WSLAND_CURSOR_PASSTHROUGH) {
+        return;
+    }
+
+    if (event->seat_client == server->seat->pointer_state.focused_client) {
         if (server->wsland_cursor.surface) {
             wl_list_remove(&server->wsland_cursor.destroy.link);
             wl_list_init(&server->wsland_cursor.destroy.link);
@@ -576,6 +601,19 @@ static void seat_request_cursor(struct wl_listener *listener, void *data) {
         }
 
         wlr_cursor_set_surface(server->cursor, event->surface, event->hotspot_x, event->hotspot_y);
+    }
+}
+
+static void request_set_shape(struct wl_listener *listener, void *user_data) {
+    wsland_server *server = wl_container_of(listener, server, events.request_set_shape);
+    struct wlr_cursor_shape_manager_v1_request_set_shape_event *event = user_data;
+
+    if (server->move.mode != WSLAND_CURSOR_PASSTHROUGH) {
+        return;
+    }
+
+    if (event->seat_client == server->seat->pointer_state.focused_client) {
+        wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, wlr_cursor_shape_v1_name(event->shape));
     }
 }
 
@@ -596,7 +634,9 @@ wsland_server_handle wsland_server_handle_impl = {
     .cursor_motion_absolute = server_cursor_motion_absolute,
     .new_toplevel_decoration = server_new_toplevel_decoration,
     .seat_request_selection = seat_request_set_selection,
+    .new_virtual_pointer = server_new_virtual_pointer,
     .seat_request_cursor = seat_request_cursor,
+    .request_set_shape = request_set_shape,
 
     .reset_server_cursor = reset_server_cursor,
     .dispatch_window_focus = dispatch_window_focus,

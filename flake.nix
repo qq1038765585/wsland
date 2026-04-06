@@ -29,7 +29,7 @@
 
             buildInputs = with pkgs; [
               wslg-freerdp-lib wslg-applist-lib wayland wayland-protocols wayland-scanner pixman cairo
-              libxcb libxcb-wm libxkbcommon libdrm xwayland openssl wlroots_0_19
+              libinput libxcb libxcb-wm libxcb-errors libxkbcommon libdrm libxcursor xwayland openssl wlroots_0_20
             ];
           };
       });
@@ -44,7 +44,7 @@
             packages = with pkgs; [
               pkg-config meson ninja
               wslg-freerdp-lib wslg-applist-lib wayland wayland-protocols wayland-scanner pixman cairo
-              libxcb libxcb-wm libxkbcommon libdrm xwayland openssl wlroots_0_19
+              libinput libxcb libxcb-wm libxcb-errors libxkbcommon libdrm libxcursor xwayland openssl wlroots_0_19
             ];
 
             LD_LIBRARY_PATH = "${wslg-freerdp-lib}/lib:${wslg-applist-lib}/lib";

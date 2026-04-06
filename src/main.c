@@ -47,13 +47,42 @@ static void wsland_signal_system_init(wsland_signal_system *signal) {
     pthread_atfork(NULL, NULL, restore_signals);
 }
 
+static wsland_config *config;
+static void log_to_file(enum wlr_log_importance importance, const char *fmt, va_list args) {
+    static FILE *log_file = NULL;
+    if (!log_file) {
+        log_file = fopen(config->log ? config->log : "/tmp/wsland.log", "a");
+        if (!log_file) {
+            return;
+        }
+    }
+
+    const enum wlr_log_importance current = wlr_log_get_verbosity();
+    if (importance > current) {
+        return;
+    }
+
+    const char *prefix = "";
+    switch (importance) {
+        case WLR_ERROR:   prefix = "[ERROR] "; break;
+        case WLR_INFO:    prefix = "[INFO ]  "; break;
+        case WLR_DEBUG:   prefix = "[DEBUG] "; break;
+        default: break;
+    }
+
+    fprintf(log_file, "%s", prefix);
+    vfprintf(log_file, fmt, args);
+    fputc('\n', log_file);
+    fflush(log_file);
+}
+
 int main(int argc, char *argv[]) {
     wlr_log_init(WLR_INFO, NULL);
-
-    wsland_config *config = wsland_config_create(argc, argv);
+    config = wsland_config_create(argc, argv);
     if (!config) {
         return EXIT_FAILURE;
     }
+    wlr_log_init(WLR_DEBUG, NULL);
 
     wsland_server *server = wsland_server_create(config);
     if (!server) {

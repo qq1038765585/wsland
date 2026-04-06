@@ -62,20 +62,22 @@ add_project_arguments(cc.get_supported_arguments([
  '-Wno-missing-braces',
  '-Wno-missing-field-initializers',
  '-Wno-unused-parameter',
+ '-Werror=false'
 ]), language: 'c')
 
-#wlroots_project = subproject(
-#    'wlroots',
-#    default_options: [
-#        'xwayland=enabled'
-#    ]
-#)
+wlroots_project = subproject(
+    'wlroots',
+    default_options: [
+        'xwayland=enabled'
+    ]
+)
+dep_wlroots = wlroots_project.get_variable('wlroots')
 
-dep_wlroots = dependency('wlroots-0.19', version : '>=0.19.3') # wlroots_project.get_variable('wlroots')
+# dep_wlroots = dependency('wlroots-0.20', version : '>=0.20.0')
 dep_winpr = dependency('winpr2', version : '>=2.4.0')
 dep_freerdp = dependency('freerdp2', version : '>=2.4.0')
 dep_freerdp_server = dependency('freerdp-server2', version : '>=2.4.0')
-dep_rdpapplist = dependency('rdpapplist', version: '>= 2.0.0')
+dep_rdpapplist = dependency('rdpapplist', version: '>= 2.0.0', required: false)
 dep_wayland_server = dependency('wayland-server', version : '>= 1.24.0')
 dep_xkbcommon = dependency('xkbcommon', version : '>=1.11.0')
 dep_openssl = dependency('openssl', version: '>= 1.1.1')
@@ -96,7 +98,11 @@ wayland_kwargs = {
 include_dir = include_directories('include')
 subdir('protocol')
 
-executable('wsland', [sources, protocols_server_header['xdg-shell'], protocols_server_header['pointer-constraints']], include_directories : [include_dir], dependencies : [
+xdg_shell_protocol = protocols_server_header['xdg-shell']
+pointer_constraints_protocol = protocols_server_header['pointer-constraints']
+cursor_shape_protocol = protocols_server_header['cursor-shape']
+
+executable('wsland', [sources, xdg_shell_protocol, pointer_constraints_protocol, cursor_shape_protocol], include_directories : [include_dir], dependencies : [
     dep_wlroots, dep_winpr, dep_freerdp, dep_rdpapplist, dep_freerdp_server, dep_wayland_server,
     dep_pixman, def_cairo, dep_openssl, dep_xkbcommon, dep_xcb, dep_xwayland
 ], install: true)

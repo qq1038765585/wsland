@@ -3,6 +3,9 @@
 
 typedef struct wsland_config {
     char *command;
+    char *socket;
+    char *log;
+
     char *address;
     int port;
 } wsland_config;

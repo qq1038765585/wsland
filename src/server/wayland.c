@@ -58,8 +58,8 @@ static struct wlr_surface *fetch_surface(wsland_window *window) {
     return window->wayland->surface;
 }
 
-static struct wlr_box *fetch_geometry(wsland_window *window) {
-    return &window->wayland->toplevel->base->current.geometry;
+static struct wlr_box fetch_geometry(wsland_window *window) {
+    return window->wayland->toplevel->base->geometry;
 }
 
 static bool fetch_activate(wsland_window *window) {
@@ -298,7 +298,6 @@ static void popup_map(struct wl_listener *listener, void *data) {
         };
         wlr_xdg_popup_unconstrain_from_box(popup->wayland->popup, &box_space);
     }
-    wl_list_insert(&popup->server->windows, &popup->server_link);
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {
@@ -309,8 +308,8 @@ static void xdg_popup_commit(struct wl_listener *listener, void *data) {
     } else if (popup->wayland->surface->mapped) {
         wsland_output *output = popup->handle->fetch_output(popup);
         if (output) {
-            int pos_x = popup->parent->tree->node.x + popup->wayland->popup->current.geometry.x;
-            int pos_y = popup->parent->tree->node.y + popup->wayland->popup->current.geometry.y;
+            int pos_x = popup->tree->node.x;
+            int pos_y = popup->tree->node.y;
             wlr_scene_node_set_position(&popup->tree->node, pos_x, pos_y);
         }
     }
@@ -327,8 +326,6 @@ static void xdg_popup_reposition(struct wl_listener *listener, void *data) {
 static void popup_unmap(struct wl_listener *listener, void *data) {
     wsland_window *popup = wl_container_of(listener, popup, events.unmap);
 
-    wl_list_remove(&popup->parent_link);
-    wl_list_remove(&popup->server_link);
     wlr_scene_node_destroy(&popup->tree->node);
 }
 
@@ -376,7 +373,7 @@ static void window_new_popup(struct wl_listener *listener, void *data) {
     window->parent = parent;
     window->type = POPUP;
 
-    window->tree = wlr_scene_xdg_surface_create(&window->server->scene->tree, window->wayland);
+    window->tree = wlr_scene_xdg_surface_create(parent->tree, window->wayland);
     window->wayland->data = window->tree;
     window->tree->node.data = window;
 
@@ -387,10 +384,6 @@ static void window_new_popup(struct wl_listener *listener, void *data) {
     LISTEN(&popup->events.destroy, &window->events.destroy, xdg_popup_destroy);
 
     LISTEN(&popup->base->events.new_popup, &window->events.new_popup, window_new_popup);
-
-    wl_list_init(&window->server_link);
-    wl_list_init(&window->parent_link);
-    wl_list_init(&window->children);
 }
 
 static void wayland_new_toplevel(struct wl_listener *listener, void *data) {
@@ -403,7 +396,7 @@ static void wayland_new_toplevel(struct wl_listener *listener, void *data) {
     window->server = server;
     window->type = TOPLEVEL;
 
-    window->tree = wlr_scene_xdg_surface_create(&window->server->scene->tree, window->wayland);
+    window->tree = wlr_scene_xdg_surface_create(&server->scene->tree, window->wayland);
     window->wayland->data = window->tree;
     window->tree->node.data = window;
 

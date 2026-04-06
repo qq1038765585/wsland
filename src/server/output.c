@@ -1,3 +1,4 @@
+// ReSharper disable All
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -88,6 +89,8 @@ static bool output_set_cursor(struct wlr_output *wlr_output, struct wlr_buffer *
     output->server->wsland_cursor.b_hotspot_x = hotspot_x;
     output->server->wsland_cursor.b_hotspot_y = hotspot_y;
     output->server->wsland_cursor.dirty = true;
+
+    wl_signal_emit(&output->server->events.wsland_cursor_frame, output->server);
     return true;
 }
 

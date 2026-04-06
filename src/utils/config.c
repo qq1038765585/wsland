@@ -14,10 +14,16 @@ wsland_config* wsland_config_create(int argc, char *argv[]) {
 
     { // parse args
         int c;
-        while ((c = getopt(argc, argv, "s:h")) != -1) {
+        while ((c = getopt(argc, argv, "c:s:l:h")) != -1) {
             switch (c) {
-            case 's':
+            case 'c':
                 config->command = optarg;
+                break;
+            case 's':
+                config->socket = optarg;
+                break;
+            case 'l':
+                config->log = optarg;
                 break;
             default:
                 wsland_log(CONFIG, INFO, "usage: %s [-s command]", argv[0]);

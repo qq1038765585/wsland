@@ -21,6 +21,7 @@
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_compositor.h>
@@ -31,6 +32,8 @@
 #include <wlr/xwayland/xwayland.h>
 
 #include "wsland/server.h"
+
+#include "wlr/types/wlr_virtual_pointer_v1.h"
 #include "wsland/utils/log.h"
 
 const struct wlr_pointer_impl wsland_pointer_impl = {
@@ -176,6 +179,12 @@ wsland_server *wsland_server_create(wsland_config *config) {
         goto create_failed;
     }
 
+    server->cursor_shape_manager = wlr_cursor_shape_manager_v1_create(server->display, 1);
+    if (!server->cursor_shape_manager) {
+        wsland_log(SERVER, ERROR,  "failed to invoke wlr_cursor_shape_manager_v1_create");
+        goto create_failed;
+    }
+
     server->seat = wlr_seat_create(server->display, "seat0");
     if (!server->seat) {
         wsland_log(SERVER, ERROR,  "failed to invoke wlr_seat_create");
@@ -197,6 +206,12 @@ wsland_server *wsland_server_create(wsland_config *config) {
     server->xdg_decoration_manager = wlr_xdg_decoration_manager_v1_create(server->display);
     if (!server->xdg_decoration_manager) {
         wsland_log(SERVER, ERROR,  "failed to invoke wlr_xdg_decoration_manager_v1_create");
+        goto create_failed;
+    }
+
+    server->virtual_pointer_manager = wlr_virtual_pointer_manager_v1_create(server->display);
+    if (!server->xdg_decoration_manager) {
+        wsland_log(SERVER, ERROR,  "failed to invoke wlr_virtual_pointer_manager_v1_create");
         goto create_failed;
     }
 
@@ -227,6 +242,12 @@ wsland_server *wsland_server_create(wsland_config *config) {
         LISTEN(&server->cursor->events.button, &server->events.cursor_button, server->handle->cursor_button);
         LISTEN(&server->cursor->events.motion, &server->events.cursor_motion, server->handle->cursor_motion);
         LISTEN(&server->cursor->events.motion_absolute, &server->events.cursor_motion_absolute, server->handle->cursor_motion_absolute);
+
+        // cursor shape event
+        LISTEN(&server->cursor_shape_manager->events.request_set_shape, &server->events.request_set_shape, server->handle->request_set_shape);
+
+        // virtual event
+        LISTEN(&server->virtual_pointer_manager->events.new_virtual_pointer, &server->events.new_virtual_pointer, server->handle->new_virtual_pointer);
 
         // seat event
         LISTEN(&server->seat->events.request_set_cursor, &server->events.request_cursor, server->handle->seat_request_cursor);
@@ -326,9 +347,10 @@ void wsland_server_destroy(wsland_server *server) {
         wl_list_remove(&server->events.new_output.link);
         wl_list_remove(&server->events.new_input.link);
         wl_list_remove(&server->events.request_cursor.link);
+        wl_list_remove(&server->events.request_set_shape.link);
         wl_list_remove(&server->events.request_set_selection.link);
         wl_list_remove(&server->events.new_toplevel_decoration.link);
-
+        wl_list_remove(&server->events.new_virtual_pointer.link);
 
         wlr_scene_node_destroy(&server->scene->tree.node);
         wlr_xcursor_manager_destroy(server->cursor_manager);

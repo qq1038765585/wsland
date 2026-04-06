@@ -228,8 +228,8 @@ static BOOL xf_peer_activate(freerdp_peer *rdp_peer) {
             settings->MonitorDefArray[0].is_primary = true;
             settings->MonitorDefArray[0].x = 0;
             settings->MonitorDefArray[0].y = 0;
-            settings->MonitorDefArray[0].width = settings->DesktopWidth;
-            settings->MonitorDefArray[0].height = settings->DesktopHeight;
+            settings->MonitorDefArray[0].width = (int)settings->DesktopWidth;
+            settings->MonitorDefArray[0].height = (int)settings->DesktopHeight;
             settings->MonitorDefArray[0].attributes.orientation = settings->DesktopOrientation;
             settings->MonitorDefArray[0].attributes.physicalWidth = settings->DesktopPhysicalWidth;
             settings->MonitorDefArray[0].attributes.physicalHeight = settings->DesktopPhysicalHeight;

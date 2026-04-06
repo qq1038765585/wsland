@@ -53,6 +53,7 @@ typedef struct wsland_window {
         struct wl_listener reposition;
         struct wl_listener new_popup;
 
+        struct wl_listener set_hints;
         struct wl_listener request_move;
         struct wl_listener request_resize;
         struct wl_listener request_maximize;

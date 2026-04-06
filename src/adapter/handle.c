@@ -17,6 +17,7 @@
 #include <wlr/render/pixman.h>
 #include <cairo/cairo.h>
 
+#include "wlr/types/wlr_cursor.h"
 #include "wsland/adapter.h"
 #include "wsland/utils/box.h"
 #include "wsland/utils/log.h"

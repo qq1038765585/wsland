@@ -122,7 +122,9 @@ void wsland_adapter_destroy(wsland_adapter *adapter) {
         wl_list_remove(&adapter->events.wsland_cursor_frame.link);
         wl_list_remove(&adapter->events.wsland_window_frame.link);
 
-        wl_list_remove(&adapter->events.set_selection.link);
+        if (adapter->events.set_selection.notify) {
+            wl_list_remove(&adapter->events.set_selection.link);
+        }
         free(adapter);
     }
 }
