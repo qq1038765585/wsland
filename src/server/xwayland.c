@@ -221,6 +221,9 @@ static void unmanaged_destroy(struct wl_listener *listener, void *user_data) {
     wl_list_remove(&unmanaged->events.dissociate.link);
     wl_list_remove(&unmanaged->events.associate.link);
     wl_list_remove(&unmanaged->events.destroy.link);
+    wl_list_remove(&unmanaged->parent_link);
+    wl_list_remove(&unmanaged->server_link);
+    wl_list_remove(&unmanaged->children);
     free(unmanaged);
 }
 
@@ -378,6 +381,9 @@ static wsland_window *create_unmanaged(wsland_server *server, struct wlr_xwaylan
     LISTEN(&xwayland_surface->events.dissociate, &unmanaged->events.dissociate, unmanaged_dissociate);
     LISTEN(&xwayland_surface->events.associate, &unmanaged->events.associate, unmanaged_associate);
     LISTEN(&xwayland_surface->events.destroy, &unmanaged->events.destroy, unmanaged_destroy);
+    wl_list_init(&unmanaged->parent_link);
+    wl_list_init(&unmanaged->server_link);
+    wl_list_init(&unmanaged->children);
     return unmanaged;
 }
 
