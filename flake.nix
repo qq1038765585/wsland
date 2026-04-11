@@ -43,7 +43,8 @@
             packages = with pkgs; [
               pkg-config meson ninja
               wslg-freerdp-lib wslg-applist-lib wayland wayland-protocols wayland-scanner pixman cairo
-              libinput libxcb-wm libxcb-errors libxkbcommon libdrm libxcursor xwayland openssl wlroots_0_20
+              libinput libxcb-wm libxcb-render-util libxcb-cursor libxcb-image libxcb-errors
+              libxkbcommon libdrm libxcursor openssl wlroots_0_20 xwayland
             ];
 
             LD_LIBRARY_PATH = "${wslg-freerdp-lib}/lib:${wslg-applist-lib}/lib";

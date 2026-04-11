@@ -27,7 +27,7 @@
 
 
 static void dispatch_window_focus(wsland_window *window) {
-    if (!window || !window->tree) {
+    if (!window || !window->tree || window->type == POPUP) {
         return;
     }
 
@@ -441,18 +441,15 @@ static void process_cursor_motion(wsland_server *server, uint32_t time) {
     );
     if (!window) {
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "default");
-    } else if (window->type == XWAYLAND && server->move.mode == WSLAND_CURSOR_PASSTHROUGH) {
-        wlr_seat_pointer_notify_clear_focus(seat);
     }
 
-    if (!surface || surface != seat->pointer_state.focused_surface) {
+    if (!surface) {
         wlr_seat_pointer_notify_clear_focus(seat);
+        return;
     }
 
-    if (surface) {
-        wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
-        wlr_seat_pointer_notify_motion(seat, time, sx, sy);
-    }
+    wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
+    wlr_seat_pointer_notify_motion(seat, time, sx, sy);
 }
 
 static void server_cursor_motion(struct wl_listener *listener, void *data) {
@@ -519,20 +516,18 @@ static void server_cursor_button(struct wl_listener *listener, void *data) {
     if (event->state == WL_POINTER_BUTTON_STATE_RELEASED) {
         reset_server_cursor(server);
     } else {
-        server->move.mode = WSLAND_CURSOR_PRESSED;
-
         double sx, sy;
         struct wlr_surface *surface = NULL;
         wsland_window *window = desktop_toplevel_at(
             server, server->cursor->x, server->cursor->y, &surface, &sx, &sy
         );
 
+        dispatch_window_focus(window);
         if (window && window->handle->window_click_cannot(window)) {
             wlr_seat_pointer_notify_button(server->seat, event->time_msec, event->button, event->state);
             return;
         }
 
-        dispatch_window_focus(window);
         if (window && (event->button == BTN_LEFT || event->button == BTN_RIGHT)) {
             uint32_t modifiers = wlr_keyboard_get_modifiers(server->seat->keyboard_state.keyboard);
 
@@ -582,6 +577,7 @@ static void cursor_surface_destroy(struct wl_listener *listener, void *user_data
     if (user_data == server->wsland_cursor.surface) {
         wl_list_remove(&server->wsland_cursor.destroy.link);
         wl_list_init(&server->wsland_cursor.destroy.link);
+        server->wsland_cursor.scene_surface = NULL;
         server->wsland_cursor.surface = NULL;
     }
 }
@@ -605,6 +601,7 @@ static void seat_request_cursor(struct wl_listener *listener, void *user_data) {
             server->wsland_cursor.surface = event->surface;
             server->wsland_cursor.s_hotspot_x = event->hotspot_x;
             server->wsland_cursor.s_hotspot_y = event->hotspot_y;
+            server->wsland_cursor.scene_surface = wlr_scene_surface_create(&server->scene->tree, event->surface);
             LISTEN(&event->surface->events.destroy, &server->wsland_cursor.destroy, cursor_surface_destroy);
         }
 

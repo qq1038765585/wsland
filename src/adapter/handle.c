@@ -585,8 +585,8 @@ static void wsland_cursor_frame(struct wl_listener *listener, void *user_data) {
     wsland_adapter *adapter = wl_container_of(listener, adapter, events.wsland_cursor_frame);
     wsland_server *server = user_data;
 
-    if (adapter->freerdp->peer && server->wsland_cursor.dirty && server->wsland_cursor.buffer) {
-        struct wlr_texture *cursor_texture = wlr_texture_from_buffer(server->renderer, server->wsland_cursor.buffer);
+    if (adapter->freerdp->peer && server->wsland_cursor.dirty && server->wsland_cursor.texture) {
+        struct wlr_texture *cursor_texture = server->wsland_cursor.texture;
         int hotspot_x = server->wsland_cursor.b_hotspot_x;
         int hotspot_y = server->wsland_cursor.b_hotspot_y;
 

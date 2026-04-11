@@ -85,7 +85,7 @@ static bool output_commit(struct wlr_output *wlr_output, const struct wlr_output
 static bool output_set_cursor(struct wlr_output *wlr_output, struct wlr_buffer *buffer, int hotspot_x, int hotspot_y) {
     wsland_output *output = wsland_output_from_output(wlr_output);
 
-    output->server->wsland_cursor.buffer = buffer;
+    output->server->wsland_cursor.texture = buffer ? wlr_texture_from_buffer(output->output.renderer, buffer) : NULL;
     output->server->wsland_cursor.b_hotspot_x = hotspot_x;
     output->server->wsland_cursor.b_hotspot_y = hotspot_y;
     output->server->wsland_cursor.dirty = true;

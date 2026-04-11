@@ -24,7 +24,6 @@ extern const struct wlr_pointer_impl wsland_pointer_impl;
 
 typedef enum wsland_cursor_mode {
     WSLAND_CURSOR_PASSTHROUGH,
-    WSLAND_CURSOR_PRESSED,
     WSLAND_CURSOR_RESIZE,
     WSLAND_CURSOR_MOVE,
 } wsland_cursor_mode;
@@ -156,11 +155,12 @@ typedef struct wsland_server {
     } move;
 
     struct {
-        struct wlr_buffer *buffer;
+        struct wlr_texture *texture;
         struct wlr_surface *surface;
         int s_hotspot_x, s_hotspot_y;
         int b_hotspot_x, b_hotspot_y;
         struct wlr_swapchain *swapchain;
+        struct wlr_scene_surface *scene_surface;
         bool dirty;
 
         struct wl_listener destroy;
