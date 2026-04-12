@@ -581,30 +581,45 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
     window->window_id = 0;
 }
 
-static void wsland_cursor_frame(struct wl_listener *listener, void *user_data) {
-    wsland_adapter *adapter = wl_container_of(listener, adapter, events.wsland_cursor_frame);
-    wsland_server *server = user_data;
+static void wsland_cursor_frame(wsland_output *output, wsland_adapter *adapter) {
+    struct wlr_output_cursor *temp, *output_cursor = NULL;
+    wl_list_for_each(temp, &output->output->cursors, link) {
+        if (!temp->enabled || !temp->visible) {
+            continue;
+        }
 
-    if (adapter->freerdp->peer && server->wsland_cursor.dirty && server->wsland_cursor.texture) {
-        struct wlr_texture *cursor_texture = server->wsland_cursor.texture;
-        int hotspot_x = server->wsland_cursor.b_hotspot_x;
-        int hotspot_y = server->wsland_cursor.b_hotspot_y;
+        if (output->output->software_cursor_locks > 0) {
+            if (output->output->hardware_cursor == temp || !temp->texture) {
+                continue;
+            }
+            output_cursor = temp;
+            break;
+        } else {
+            if (output->output->hardware_cursor == temp) {
+                output_cursor = temp;
+                break;
+            }
+        }
+    }
 
-        if (!server->wsland_cursor.swapchain || (server->wsland_cursor.swapchain->width != (int)cursor_texture->width || server->wsland_cursor.swapchain->height != (int)cursor_texture->height)) {
-            if (server->wsland_cursor.swapchain) {
-                wlr_swapchain_destroy(server->wsland_cursor.swapchain);
+    if (output_cursor) {
+        struct wlr_texture *cursor_texture = output_cursor->texture;
+        if (!output->server->wsland_cursor.swapchain || (output->server->wsland_cursor.swapchain->width != (int)cursor_texture->width || output->server->wsland_cursor.swapchain->height != (int)cursor_texture->height)) {
+            if (output->server->wsland_cursor.swapchain) {
+                wlr_swapchain_destroy(output->server->wsland_cursor.swapchain);
+                output->server->wsland_cursor.swapchain = NULL;
             }
 
-            server->wsland_cursor.swapchain = wlr_swapchain_create(
-                server->allocator, cursor_texture->width, cursor_texture->height,
+            output->server->wsland_cursor.swapchain = wlr_swapchain_create(
+                output->server->allocator, cursor_texture->width, cursor_texture->height,
                 &(const struct wlr_drm_format) { .format = DRM_FORMAT_ARGB8888}
             );
         }
 
-        struct wlr_buffer *buffer = wlr_swapchain_acquire(server->wsland_cursor.swapchain);
+        struct wlr_buffer *buffer = wlr_swapchain_acquire(output->server->wsland_cursor.swapchain);
         if (buffer) {
-            struct wlr_texture *texture = wlr_texture_from_buffer(server->renderer, buffer);
-            struct wlr_render_pass *render_pass = wlr_renderer_begin_buffer_pass(server->renderer, buffer, NULL);
+            struct wlr_texture *texture = wlr_texture_from_buffer(output->server->renderer, buffer);
+            struct wlr_render_pass *render_pass = wlr_renderer_begin_buffer_pass(output->server->renderer, buffer, NULL);
             wlr_render_pass_add_texture(render_pass, &(const struct wlr_render_texture_options) {
                 .texture = cursor_texture, .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
                 .transform = WL_OUTPUT_TRANSFORM_FLIPPED_180,
@@ -628,8 +643,8 @@ static void wsland_cursor_frame(struct wl_listener *listener, void *user_data) {
                     POINTER_LARGE_UPDATE pointerUpdate = {0};
                     pointerUpdate.xorBpp = cursor_bpp * 8;
                     pointerUpdate.cacheIndex = 0;
-                    pointerUpdate.hotSpotX = hotspot_x;
-                    pointerUpdate.hotSpotY = hotspot_y;
+                    pointerUpdate.hotSpotX = output_cursor->hotspot_x;
+                    pointerUpdate.hotSpotY = output_cursor->hotspot_y;
                     pointerUpdate.height = height,
                     pointerUpdate.width = width,
                     pointerUpdate.lengthXorMask = cursor_bpp * width * height;
@@ -645,10 +660,7 @@ static void wsland_cursor_frame(struct wl_listener *listener, void *user_data) {
             }
             wlr_buffer_unlock(buffer);
             wlr_texture_destroy(texture);
-            wlr_texture_destroy(cursor_texture);
         }
-
-        server->wsland_cursor.dirty = false;
     }
 }
 
@@ -664,6 +676,8 @@ static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
             return;
         }
     }
+
+    wsland_cursor_frame(output, adapter);
     wsland_peer *peer = adapter->freerdp->peer;
 
     int window_size = wl_list_length(&adapter->server->windows);
@@ -862,7 +876,6 @@ release:
 }
 
 wsland_adapter_handle wsland_adapter_handle_impl = {
-    .wsland_cursor_frame = wsland_cursor_frame,
     .wsland_window_frame = wsland_window_frame,
 
     .wsland_window_motion = wsland_window_motion,

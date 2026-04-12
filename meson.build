@@ -10,7 +10,6 @@ sources = files(
     'src/server/handle.c',
     'src/server/wayland.c',
     'src/server/xwayland.c',
-    'src/server/output.c',
     'src/adapter/adapter.c',
     'src/adapter/handle.c',
     'src/freerdp/freerdp.c',

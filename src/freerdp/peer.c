@@ -25,7 +25,7 @@ static void rdp_peer_context_free(freerdp_peer *rdp_peer, wsland_peer *peer) {
 
     wsland_output *output, *o_temp;
     wl_list_for_each_safe(output, o_temp, &peer->outputs, peer_link) {
-        wlr_output_destroy(&output->output);
+        wlr_output_destroy(output->output);
     }
     wlr_keyboard_finish(&peer->keyboard->keyboard);
     free(peer->keyboard);

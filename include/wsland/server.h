@@ -84,7 +84,7 @@ typedef struct wsland_keyboard {
 
 typedef struct wsland_output {
     struct wlr_box monitor;
-    struct wlr_output output;
+    struct wlr_output *output;
     struct wlr_pointer pointer;
     struct wsland_server *server;
     struct wlr_scene_output *scene_output;
@@ -155,15 +155,8 @@ typedef struct wsland_server {
     } move;
 
     struct {
-        struct wlr_texture *texture;
-        struct wlr_surface *surface;
-        int s_hotspot_x, s_hotspot_y;
-        int b_hotspot_x, b_hotspot_y;
+        bool restore;
         struct wlr_swapchain *swapchain;
-        struct wlr_scene_surface *scene_surface;
-        bool dirty;
-
-        struct wl_listener destroy;
     } wsland_cursor;
 
     struct {
@@ -182,17 +175,12 @@ typedef struct wsland_server {
         struct wl_listener new_virtual_pointer;
 
         struct wl_listener wayland_new_toplevel;
-
         struct wl_listener xwayland_new_toplevel;
         struct wl_listener xwayland_ready;
 
-        struct wl_listener wsland_cursor_destroy;
-
+        struct wl_signal wsland_window_frame;
         struct wl_signal wsland_window_motion;
         struct wl_signal wsland_window_destroy;
-
-        struct wl_signal wsland_cursor_frame;
-        struct wl_signal wsland_window_frame;
     } events;
 
     wsland_config *config;

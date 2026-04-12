@@ -92,23 +92,26 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 
 static void server_new_output(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.new_output);
-    wsland_output *output = user_data;
+    wsland_output *output = calloc(1, sizeof(*output));
+    output->output = user_data;
     output->server = server;
 
-    wlr_output_init_render(&output->output, server->allocator, server->renderer);
+    output->output->data = output;
+    wlr_output_init_render(output->output, server->allocator, server->renderer);
 
-    LISTEN(&output->output.events.frame, &output->events.frame, output_frame);
-    LISTEN(&output->output.events.destroy, &output->events.destroy, output_destroy);
+    LISTEN(&output->output->events.frame, &output->events.frame, output_frame);
+    LISTEN(&output->output->events.destroy, &output->events.destroy, output_destroy);
     wl_list_insert(&server->outputs, &output->server_link);
 
-    output->scene_output = wlr_scene_output_create(server->scene, &output->output);
-    struct wlr_output_layout_output *layout_output = wlr_output_layout_add_auto(server->output_layout, &output->output);
+    output->scene_output = wlr_scene_output_create(server->scene, output->output);
+    struct wlr_output_layout_output *layout_output = wlr_output_layout_add_auto(server->output_layout, output->output);
     wlr_scene_output_layout_add_output(server->scene_layout, layout_output, output->scene_output);
 
     struct wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
-    wlr_output_commit_state(&output->output, &state);
+    wlr_output_state_set_custom_mode(&state, output->output->width, output->output->height, WSLAND_DEFAULT_REFRESH);
+    wlr_output_commit_state(output->output, &state);
     wlr_output_state_finish(&state);
 
     if (server->config->command) {
@@ -268,8 +271,7 @@ static void begin_window_interactive(wsland_window *window, wsland_cursor_mode m
         server->grab.x = server->cursor->x - window->tree->node.x;
         server->grab.y = server->cursor->y - window->tree->node.y;
 
-        server->wsland_cursor.s_hotspot_x = server->wsland_cursor.b_hotspot_x;
-        server->wsland_cursor.s_hotspot_y = server->wsland_cursor.b_hotspot_y;
+        server->wsland_cursor.restore = true;
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "move");
     }
     else {
@@ -288,8 +290,7 @@ static void begin_window_interactive(wsland_window *window, wsland_cursor_mode m
             }
         }
 
-        server->wsland_cursor.s_hotspot_x = server->wsland_cursor.b_hotspot_x;
-        server->wsland_cursor.s_hotspot_y = server->wsland_cursor.b_hotspot_y;
+        server->wsland_cursor.restore = true;
         wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, wlr_xcursor_get_resize_name(edges));
 
         struct wlr_box geo_box = window->handle->fetch_geometry(window);
@@ -333,18 +334,9 @@ static wsland_window* desktop_toplevel_at(
 }
 
 static void reset_server_cursor(wsland_server *server) {
-    if (server->move.mode == WSLAND_CURSOR_MOVE || server->move.mode == WSLAND_CURSOR_RESIZE) {
-        struct wlr_surface *surface = server->wsland_cursor.surface;
-        bool non_xwayland = server->grab.window->type != XWAYLAND;
-
-        if (non_xwayland && surface && surface->mapped) {
-            wlr_cursor_set_surface(
-                server->cursor, server->wsland_cursor.surface,
-                server->wsland_cursor.s_hotspot_x, server->wsland_cursor.s_hotspot_y
-            );
-        } else {
-            wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "default");
-        }
+    if (server->wsland_cursor.restore) {
+        wlr_seat_pointer_notify_clear_focus(server->seat);
+        server->wsland_cursor.restore = false;
     }
 
     server->move.mode = WSLAND_CURSOR_PASSTHROUGH;
@@ -571,17 +563,6 @@ static void server_cursor_frame(struct wl_listener *listener, void *data) {
     wlr_seat_pointer_notify_frame(server->seat);
 }
 
-static void cursor_surface_destroy(struct wl_listener *listener, void *user_data) {
-    wsland_server *server = wl_container_of(listener, server, wsland_cursor.destroy);
-
-    if (user_data == server->wsland_cursor.surface) {
-        wl_list_remove(&server->wsland_cursor.destroy.link);
-        wl_list_init(&server->wsland_cursor.destroy.link);
-        server->wsland_cursor.scene_surface = NULL;
-        server->wsland_cursor.surface = NULL;
-    }
-}
-
 static void seat_request_cursor(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.request_cursor);
     struct wlr_seat_pointer_request_set_cursor_event *event = user_data;
@@ -591,20 +572,9 @@ static void seat_request_cursor(struct wl_listener *listener, void *user_data) {
     }
 
     if (event->seat_client == server->seat->pointer_state.focused_client) {
-        if (server->wsland_cursor.surface && event->surface != server->wsland_cursor.surface) {
-            wl_list_remove(&server->wsland_cursor.destroy.link);
-            wl_list_init(&server->wsland_cursor.destroy.link);
-            server->wsland_cursor.surface = NULL;
+        if (event->surface) {
+            wlr_scene_surface_create(&server->scene->tree, event->surface);
         }
-
-        if (event->surface && event->surface != server->wsland_cursor.surface) {
-            server->wsland_cursor.surface = event->surface;
-            server->wsland_cursor.s_hotspot_x = event->hotspot_x;
-            server->wsland_cursor.s_hotspot_y = event->hotspot_y;
-            server->wsland_cursor.scene_surface = wlr_scene_surface_create(&server->scene->tree, event->surface);
-            LISTEN(&event->surface->events.destroy, &server->wsland_cursor.destroy, cursor_surface_destroy);
-        }
-
         wlr_cursor_set_surface(server->cursor, event->surface, event->hotspot_x, event->hotspot_y);
     }
 }

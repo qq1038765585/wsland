@@ -89,18 +89,15 @@ typedef struct wsland_adapter_handle {
     void (*wsland_window_motion)(struct wl_listener *listener, void *data);
     void (*wsland_window_destroy)(struct wl_listener *listener, void *data);
 
-    void (*wsland_cursor_frame)(struct wl_listener *listener, void *data);
     void (*wsland_window_frame)(struct wl_listener *listener, void *data);
 } wsland_adapter_handle;
 
 typedef struct wsland_adapter {
 
     struct {
+        struct wl_listener wsland_window_frame;
         struct wl_listener wsland_window_motion;
         struct wl_listener wsland_window_destroy;
-
-        struct wl_listener wsland_cursor_frame;
-        struct wl_listener wsland_window_frame;
 
         struct wl_listener set_selection;
     } events;

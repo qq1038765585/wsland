@@ -6,6 +6,7 @@
 #include <wlr/render/drm_format_set.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/backend/headless.h>
 #include <wlr/render/pixman.h>
 
 #include "wsland/server.h"
@@ -74,11 +75,18 @@ void wsland_adapter_create_output_for_peer(wsland_peer *peer, rdpMonitor *monito
     mode.preferred = monitor->is_primary;
     mode.refresh = WSLAND_DEFAULT_REFRESH;
 
-    wsland_output *output = wsland_output_create(server, monitor->width, monitor->height);
-    if (!output) {
-        wsland_log(ADAPTER, ERROR, "failed to invoke wsland_output_init");
+    struct wlr_output *wlr_output = wlr_headless_add_output(server->backend, monitor->width, monitor->height);
+    if (!wlr_output) {
+        wsland_log(ADAPTER, ERROR, "failed to invoke wlr_headless_add_output");
         return;
     }
+
+    wsland_output *output = wlr_output->data;
+    wlr_pointer_init(&output->pointer, &wsland_pointer_impl, wsland_pointer_impl.name);
+    output->pointer.output_name = strdup(output->output->name);
+
+    wl_signal_emit_mutable(&server->backend->events.new_input, &output->pointer.base);
+    pixman_region32_init(&output->pending_commit_damage);
 
     output->primary = monitor->is_primary;
     output->monitor = (struct wlr_box){monitor->x, monitor->y, monitor->width, monitor->height};
@@ -104,7 +112,6 @@ wsland_adapter* wsland_adapter_create(wsland_server *server) {
         LISTEN(&server->events.wsland_window_frame, &adapter->events.wsland_window_frame, adapter->handle->wsland_window_frame);
         LISTEN(&server->events.wsland_window_motion, &adapter->events.wsland_window_motion, adapter->handle->wsland_window_motion);
         LISTEN(&server->events.wsland_window_destroy, &adapter->events.wsland_window_destroy, adapter->handle->wsland_window_destroy);
-        LISTEN(&server->events.wsland_cursor_frame, &adapter->events.wsland_cursor_frame, adapter->handle->wsland_cursor_frame);
     }
 
     return adapter;
@@ -116,11 +123,9 @@ create_failed:
 
 void wsland_adapter_destroy(wsland_adapter *adapter) {
     if (adapter) {
+        wl_list_remove(&adapter->events.wsland_window_frame.link);
         wl_list_remove(&adapter->events.wsland_window_motion.link);
         wl_list_remove(&adapter->events.wsland_window_destroy.link);
-
-        wl_list_remove(&adapter->events.wsland_cursor_frame.link);
-        wl_list_remove(&adapter->events.wsland_window_frame.link);
 
         if (adapter->events.set_selection.notify) {
             wl_list_remove(&adapter->events.set_selection.link);
