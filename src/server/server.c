@@ -277,6 +277,7 @@ wsland_server *wsland_server_create(wsland_config *config) {
     wl_list_init(&server->windows);
     wl_list_init(&server->keyboards);
 
+    wl_signal_init(&server->events.wsland_cursor_frame);
     wl_signal_init(&server->events.wsland_window_frame);
     wl_signal_init(&server->events.wsland_window_motion);
     wl_signal_init(&server->events.wsland_window_destroy);
@@ -325,6 +326,7 @@ void wsland_server_running(wsland_server *server) {
 
 void wsland_server_destroy(wsland_server *server) {
     if (server) {
+        assert(wl_list_empty(&server->events.wsland_cursor_frame.listener_list));
         assert(wl_list_empty(&server->events.wsland_window_frame.listener_list));
         assert(wl_list_empty(&server->events.wsland_window_motion.listener_list));
         assert(wl_list_empty(&server->events.wsland_window_destroy.listener_list));

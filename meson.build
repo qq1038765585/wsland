@@ -7,6 +7,7 @@ sources = files(
     'src/utils/time.c',
     'src/utils/config.c',
     'src/server/server.c',
+    'src/server/output.c',
     'src/server/handle.c',
     'src/server/wayland.c',
     'src/server/xwayland.c',

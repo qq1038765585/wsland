@@ -209,10 +209,9 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
 static void xdg_toplevel_unmap(struct wl_listener *listener, void *data) {
     wsland_window *window = wl_container_of(listener, window, events.unmap);
 
-    wl_list_remove(&window->parent_link);
     wl_list_remove(&window->server_link);
+    wl_list_remove(&window->parent_link);
     wlr_scene_node_destroy(&window->tree->node);
-    wl_signal_emit(&window->server->events.wsland_window_destroy, window);
 }
 
 static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
@@ -226,7 +225,6 @@ static void xdg_toplevel_commit(struct wl_listener *listener, void *data) {
 static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
     wsland_window *window = wl_container_of(listener, window, events.destroy);
 
-    wl_signal_emit(&window->server->events.wsland_window_destroy, window);
     wl_list_remove(&window->events.map.link);
     wl_list_remove(&window->events.unmap.link);
     wl_list_remove(&window->events.commit.link);
@@ -237,6 +235,8 @@ static void xdg_toplevel_destroy(struct wl_listener *listener, void *data) {
     wl_list_remove(&window->events.request_fullscreen.link);
     wl_list_remove(&window->events.destroy.link);
     wl_list_remove(&window->children);
+
+    wl_signal_emit(&window->server->events.wsland_window_destroy, window);
     free(window);
 }
 
@@ -291,6 +291,10 @@ static void popup_map(struct wl_listener *listener, void *data) {
     wsland_window *popup = wl_container_of(listener, popup, events.map);
     popup->wayland->surface->data = popup;
 
+    if (popup->parent) {
+        wl_list_insert(&popup->parent->children, &popup->parent_link);
+    }
+
     wsland_output *output = popup->handle->fetch_output(popup);
     if (output) {
         struct wlr_box box_space = {
@@ -300,6 +304,9 @@ static void popup_map(struct wl_listener *listener, void *data) {
         };
         wlr_xdg_popup_unconstrain_from_box(popup->wayland->popup, &box_space);
     }
+
+    wl_list_insert(&popup->server->windows, &popup->server_link);
+    popup->server->zorder = true;
 }
 
 static void xdg_popup_commit(struct wl_listener *listener, void *data) {
@@ -312,6 +319,10 @@ static void xdg_popup_commit(struct wl_listener *listener, void *data) {
         if (output) {
             int pos_x = popup->tree->node.x;
             int pos_y = popup->tree->node.y;
+            if (popup->parent) {
+                pos_x += popup->parent->tree->node.x;
+                pos_y += popup->parent->tree->node.y;
+            }
             wlr_scene_node_set_position(&popup->tree->node, pos_x, pos_y);
         }
     }
@@ -328,19 +339,22 @@ static void xdg_popup_reposition(struct wl_listener *listener, void *data) {
 static void popup_unmap(struct wl_listener *listener, void *data) {
     wsland_window *popup = wl_container_of(listener, popup, events.unmap);
 
+    wl_list_remove(&popup->server_link);
+    wl_list_remove(&popup->parent_link);
     wlr_scene_node_destroy(&popup->tree->node);
 }
 
 static void xdg_popup_destroy(struct wl_listener *listener, void *data) {
     wsland_window *popup = wl_container_of(listener, popup, events.destroy);
 
-    wl_signal_emit(&popup->server->events.wsland_window_destroy, popup);
     wl_list_remove(&popup->events.map.link);
     wl_list_remove(&popup->events.unmap.link);
     wl_list_remove(&popup->events.commit.link);
     wl_list_remove(&popup->events.new_popup.link);
     wl_list_remove(&popup->events.reposition.link);
     wl_list_remove(&popup->events.destroy.link);
+
+    wl_signal_emit(&popup->server->events.wsland_window_destroy, popup);
     free(popup);
 }
 
@@ -375,7 +389,7 @@ static void window_new_popup(struct wl_listener *listener, void *data) {
     window->parent = parent;
     window->type = POPUP;
 
-    window->tree = wlr_scene_xdg_surface_create(parent->tree, window->wayland);
+    window->tree = wlr_scene_xdg_surface_create(&window->server->scene->tree, window->wayland);
     window->wayland->data = window->tree;
     window->tree->node.data = window;
 
@@ -384,8 +398,11 @@ static void window_new_popup(struct wl_listener *listener, void *data) {
     LISTEN(&popup->base->surface->events.commit, &window->events.commit, xdg_popup_commit);
     LISTEN(&popup->events.reposition, &window->events.reposition, xdg_popup_reposition);
     LISTEN(&popup->events.destroy, &window->events.destroy, xdg_popup_destroy);
-
     LISTEN(&popup->base->events.new_popup, &window->events.new_popup, window_new_popup);
+
+    wl_list_init(&window->server_link);
+    wl_list_init(&window->parent_link);
+    wl_list_init(&window->children);
 }
 
 static void wayland_new_toplevel(struct wl_listener *listener, void *data) {

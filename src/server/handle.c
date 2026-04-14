@@ -64,6 +64,7 @@ static void dispatch_window_focus(wsland_window *window) {
 
 static void output_frame(struct wl_listener *listener, void *data) {
     wsland_output *output = wl_container_of(listener, output, events.frame);
+    output->server->framing = true;
 
     pixman_region32_t damage;
     pixman_region32_init(&damage);
@@ -80,6 +81,7 @@ static void output_frame(struct wl_listener *listener, void *data) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(output->scene_output, &now);
+    output->server->framing = false;
 }
 
 static void output_destroy(struct wl_listener *listener, void *data) {
@@ -92,26 +94,22 @@ static void output_destroy(struct wl_listener *listener, void *data) {
 
 static void server_new_output(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.new_output);
-    wsland_output *output = calloc(1, sizeof(*output));
-    output->output = user_data;
-    output->server = server;
+    wsland_output *output = user_data;
 
-    output->output->data = output;
-    wlr_output_init_render(output->output, server->allocator, server->renderer);
+    wlr_output_init_render(&output->output, server->allocator, server->renderer);
 
-    LISTEN(&output->output->events.frame, &output->events.frame, output_frame);
-    LISTEN(&output->output->events.destroy, &output->events.destroy, output_destroy);
+    LISTEN(&output->output.events.frame, &output->events.frame, output_frame);
+    LISTEN(&output->output.events.destroy, &output->events.destroy, output_destroy);
     wl_list_insert(&server->outputs, &output->server_link);
 
-    output->scene_output = wlr_scene_output_create(server->scene, output->output);
-    struct wlr_output_layout_output *layout_output = wlr_output_layout_add_auto(server->output_layout, output->output);
+    output->scene_output = wlr_scene_output_create(server->scene, &output->output);
+    struct wlr_output_layout_output *layout_output = wlr_output_layout_add_auto(server->output_layout, &output->output);
     wlr_scene_output_layout_add_output(server->scene_layout, layout_output, output->scene_output);
 
     struct wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
-    wlr_output_state_set_custom_mode(&state, output->output->width, output->output->height, WSLAND_DEFAULT_REFRESH);
-    wlr_output_commit_state(output->output, &state);
+    wlr_output_commit_state(&output->output, &state);
     wlr_output_state_finish(&state);
 
     if (server->config->command) {
@@ -336,6 +334,7 @@ static wsland_window* desktop_toplevel_at(
 static void reset_server_cursor(wsland_server *server) {
     if (server->wsland_cursor.restore) {
         wlr_seat_pointer_notify_clear_focus(server->seat);
+        wlr_cursor_set_xcursor(server->cursor, server->cursor_manager, "default");
         server->wsland_cursor.restore = false;
     }
 

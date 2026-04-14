@@ -82,7 +82,7 @@ int main(int argc, char *argv[]) {
     if (!config) {
         return EXIT_FAILURE;
     }
-    wlr_log_init(WLR_DEBUG, NULL);
+    wlr_log_init(WLR_INFO, NULL);
 
     wsland_server *server = wsland_server_create(config);
     if (!server) {

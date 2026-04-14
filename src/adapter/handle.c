@@ -543,9 +543,22 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
     wsland_adapter *adapter = wl_container_of(listener, adapter, events.wsland_window_destroy);
     wsland_window *window = data;
 
-    if (!adapter->freerdp->peer || !window->window_id) {
+    wsland_peer *peer = adapter->freerdp->peer;
+    if (!peer || !window->window_id) {
         return;
     }
+
+    /*if (window->surface_id || window->buffer_id) {
+        int waitRetry = 0;
+        while (window->update_pending || (peer->current_frame_id != peer->acknowledged_frame_id)) {
+            if (++waitRetry > 1000) {
+                break;
+            }
+            usleep(10000);
+            peer->peer->CheckFileDescriptor(peer->peer);
+            WTSVirtualChannelManagerCheckFileDescriptor(peer->vcm);
+        }
+    }*/
 
     if (adapter->freerdp->use_gfxredir) {
         wsland_window_buffer_destroy(adapter, window);
@@ -555,7 +568,7 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
     window_order_info.windowId = window->window_id;
     window_order_info.fieldFlags = WINDOW_ORDER_TYPE_WINDOW | WINDOW_ORDER_STATE_DELETED;
 
-    struct rdp_update *update = adapter->freerdp->peer->peer->context->update;
+    struct rdp_update *update = peer->peer->context->update;
     update->BeginPaint(update->context);
     update->window->WindowDelete(update->context, &window_order_info);
     update->EndPaint(update->context);
@@ -564,7 +577,7 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
         RDPGFX_DELETE_SURFACE_PDU deleteSurface = {0};
         deleteSurface.surfaceId = (uint16_t)window->surface_id;
 
-        RdpgfxServerContext *gfx_ctx = adapter->freerdp->peer->ctx_server_rdpgfx;
+        RdpgfxServerContext *gfx_ctx = peer->ctx_server_rdpgfx;
         gfx_ctx->DeleteSurface(gfx_ctx, &deleteSurface);
         window->surface_id = 0;
     }
@@ -581,29 +594,12 @@ static void wsland_window_destroy(struct wl_listener *listener, void *data) {
     window->window_id = 0;
 }
 
-static void wsland_cursor_frame(wsland_output *output, wsland_adapter *adapter) {
-    struct wlr_output_cursor *temp, *output_cursor = NULL;
-    wl_list_for_each(temp, &output->output->cursors, link) {
-        if (!temp->enabled || !temp->visible) {
-            continue;
-        }
+static void wsland_cursor_frame(struct wl_listener *listener, void *user_data) {
+    wsland_adapter *adapter = wl_container_of(listener, adapter, events.wsland_cursor_frame);
+    wsland_output *output = user_data;
 
-        if (output->output->software_cursor_locks > 0) {
-            if (output->output->hardware_cursor == temp || !temp->texture) {
-                continue;
-            }
-            output_cursor = temp;
-            break;
-        } else {
-            if (output->output->hardware_cursor == temp) {
-                output_cursor = temp;
-                break;
-            }
-        }
-    }
-
-    if (output_cursor) {
-        struct wlr_texture *cursor_texture = output_cursor->texture;
+    if (adapter->server->wsland_cursor.texture && adapter->server->wsland_cursor.dirty) {
+        struct wlr_texture *cursor_texture = adapter->server->wsland_cursor.texture;
         if (!output->server->wsland_cursor.swapchain || (output->server->wsland_cursor.swapchain->width != (int)cursor_texture->width || output->server->wsland_cursor.swapchain->height != (int)cursor_texture->height)) {
             if (output->server->wsland_cursor.swapchain) {
                 wlr_swapchain_destroy(output->server->wsland_cursor.swapchain);
@@ -643,8 +639,8 @@ static void wsland_cursor_frame(wsland_output *output, wsland_adapter *adapter) 
                     POINTER_LARGE_UPDATE pointerUpdate = {0};
                     pointerUpdate.xorBpp = cursor_bpp * 8;
                     pointerUpdate.cacheIndex = 0;
-                    pointerUpdate.hotSpotX = output_cursor->hotspot_x;
-                    pointerUpdate.hotSpotY = output_cursor->hotspot_y;
+                    pointerUpdate.hotSpotX = output->server->wsland_cursor.hotspot_x;
+                    pointerUpdate.hotSpotY = output->server->wsland_cursor.hotspot_y;
                     pointerUpdate.height = height,
                     pointerUpdate.width = width,
                     pointerUpdate.lengthXorMask = cursor_bpp * width * height;
@@ -660,6 +656,7 @@ static void wsland_cursor_frame(wsland_output *output, wsland_adapter *adapter) 
             }
             wlr_buffer_unlock(buffer);
             wlr_texture_destroy(texture);
+            wlr_texture_destroy(cursor_texture);
         }
     }
 }
@@ -668,17 +665,15 @@ static void wsland_window_frame(struct wl_listener *listener, void *user_data) {
     wsland_adapter *adapter = wl_container_of(listener, adapter, events.wsland_window_frame);
     wsland_output *output = user_data;
 
+    wsland_peer *peer = adapter->freerdp->peer;
     {
-        if (!adapter->freerdp->peer || !(adapter->freerdp->peer->flags & WSLAND_PEER_OUTPUT_ENABLED)) {
+        if (!peer || !(peer->flags & WSLAND_PEER_OUTPUT_ENABLED)) {
             return;
         }
-        if (adapter->freerdp->peer->current_frame_id - adapter->freerdp->peer->acknowledged_frame_id > 2) {
+        if (peer->current_frame_id - peer->acknowledged_frame_id > 2) {
             return;
         }
     }
-
-    wsland_cursor_frame(output, adapter);
-    wsland_peer *peer = adapter->freerdp->peer;
 
     int window_size = wl_list_length(&adapter->server->windows);
     if (!window_size) {
@@ -876,8 +871,8 @@ release:
 }
 
 wsland_adapter_handle wsland_adapter_handle_impl = {
+    .wsland_cursor_frame = wsland_cursor_frame,
     .wsland_window_frame = wsland_window_frame,
-
     .wsland_window_motion = wsland_window_motion,
     .wsland_window_destroy = wsland_window_destroy,
 };

@@ -55,6 +55,7 @@ typedef struct wsland_window {
         struct wl_listener new_popup;
 
         struct wl_listener set_hints;
+        struct wl_listener set_geometry;
         struct wl_listener request_move;
         struct wl_listener request_resize;
         struct wl_listener request_maximize;
@@ -86,15 +87,16 @@ void wsland_adapter_create_output_for_peer(wsland_peer *peer, rdpMonitor *monito
 
 
 typedef struct wsland_adapter_handle {
+    void (*wsland_cursor_frame)(struct wl_listener *listener, void *data);
+    void (*wsland_window_frame)(struct wl_listener *listener, void *data);
     void (*wsland_window_motion)(struct wl_listener *listener, void *data);
     void (*wsland_window_destroy)(struct wl_listener *listener, void *data);
-
-    void (*wsland_window_frame)(struct wl_listener *listener, void *data);
 } wsland_adapter_handle;
 
 typedef struct wsland_adapter {
 
     struct {
+        struct wl_listener wsland_cursor_frame;
         struct wl_listener wsland_window_frame;
         struct wl_listener wsland_window_motion;
         struct wl_listener wsland_window_destroy;
