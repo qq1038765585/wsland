@@ -72,21 +72,48 @@ static void window_center(wsland_window *window) {
 
         int pos_x = output->work_area.x + (output->work_area.width - bounds.width) / 2;
         int pos_y = output->work_area.y + (output->work_area.height - bounds.height) / 2;
-        wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
+
+        wlr_xwayland_surface_set_fullscreen(window->xwayland, false);
+        wlr_xwayland_surface_set_maximized(window->xwayland, false, false);
 
         wlr_xwayland_surface_configure(
             window->xwayland, pos_x, pos_y, window->xwayland->width, window->xwayland->height
         );
+
+        wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
+    }
+}
+
+static void window_center_output(wsland_window *window) {
+    wsland_output *output = fetch_output(window);
+
+    if (output) {
+        int width = output->work_area.width / 2;
+        int height = output->work_area.height / 2;
+        if (window->xwayland->size_hints &&
+            window->xwayland->size_hints->min_width  == window->xwayland->size_hints->max_width &&
+            window->xwayland->size_hints->min_height == window->xwayland->size_hints->max_height) {
+            width = window->xwayland->width;
+            height = window->xwayland->height;
+        }
+        int pos_x = output->work_area.x + (output->work_area.width - width) / 2;
+        int pos_y = output->work_area.y + (output->work_area.height - height) / 2;
+
+        wlr_xwayland_surface_set_fullscreen(window->xwayland, false);
+        wlr_xwayland_surface_set_maximized(window->xwayland, false, false);
+
+        wlr_xwayland_surface_configure(window->xwayland, pos_x, pos_y, width, height);
+        wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
     }
 }
 
 static void window_motion(wsland_window *window,  int pos_x, int pos_y) {
-    wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
-
     wlr_xwayland_surface_configure(
         window->xwayland, pos_x, pos_y,
         window->xwayland->width, window->xwayland->height
     );
+
+    wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
 }
 
 static void window_activate(wsland_window *window, bool enabled) {
@@ -108,11 +135,12 @@ static void window_maximize(wsland_window *window) {
                     window->before.width = output->work_area.width / 2;
                     window->before.height = output->work_area.height / 2;
                 }
-                wlr_scene_node_set_position(&window->tree->node, window->before.x, window->before.y);
 
                 wlr_xwayland_surface_configure(
                     window->xwayland, window->before.x, window->before.y, window->before.width, window->before.height
                 );
+
+                wlr_scene_node_set_position(&window->tree->node, window->before.x, window->before.y);
             } else {
                 window->before = (struct wlr_box){
                     window->tree->node.x,
@@ -120,11 +148,12 @@ static void window_maximize(wsland_window *window) {
                     window->xwayland->width,
                     window->xwayland->height,
                 };
-                wlr_scene_node_set_position(&window->tree->node, output->work_area.x, output->work_area.y);
 
                 wlr_xwayland_surface_configure(
                     window->xwayland, output->work_area.x, output->work_area.y, output->work_area.width, output->work_area.height
                 );
+
+                wlr_scene_node_set_position(&window->tree->node, output->work_area.x, output->work_area.y);
             }
             wlr_xwayland_surface_set_maximized(window->xwayland, !maximized, !maximized);
         }
@@ -232,8 +261,8 @@ static void unmanaged_request_configure(struct wl_listener *listener, void *user
     wsland_window *unmanaged = wl_container_of(listener, unmanaged, events.request_configure);
     struct wlr_xwayland_surface_configure_event *event = user_data;
 
-    wlr_scene_node_set_position(&unmanaged->tree->node, event->x, event->y);
     wlr_xwayland_surface_configure(unmanaged->xwayland, event->x, event->y, event->width, event->height);
+    wlr_scene_node_set_position(&unmanaged->tree->node, event->x, event->y);
 }
 
 static void unmanaged_destroy(struct wl_listener *listener, void *user_data) {
@@ -257,7 +286,12 @@ static void xwayland_map(struct wl_listener *listener, void *user_data) {
     window->tree = wlr_scene_tree_create(&window->server->scene->tree);
     wlr_scene_surface_create(window->tree, window->xwayland->surface);
     window->tree->node.data = window->xwayland->surface->data = window;
-    window_center(window);
+
+    if (window->parent) {
+        window_center(window);
+    } else {
+        window_center_output(window);
+    }
 
     if (window->parent) {
         wl_list_insert(&window->parent->children, &window->parent_link);

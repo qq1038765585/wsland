@@ -107,6 +107,35 @@ static void window_center(wsland_window *window) {
     }
 }
 
+static void window_center_output(wsland_window *window) {
+    if (window->type != TOPLEVEL) {
+        return;
+    }
+
+    wsland_output *output;
+    if ((output = fetch_output(window)) != NULL) {
+        int width = output->work_area.width / 2;
+        int height = output->work_area.height / 2;
+        if (window->wayland->toplevel->current.max_width > 0 &&
+            window->wayland->toplevel->current.max_height > 0 &&
+            window->wayland->toplevel->current.min_width == window->wayland->toplevel->current.max_width &&
+            window->wayland->toplevel->current.min_height == window->wayland->toplevel->current.max_height) {
+            struct wlr_box bounds;
+            wlr_surface_get_extents(window->wayland->surface, &bounds);
+            width = bounds.width;
+            height = bounds.height;
+        }
+
+        int pos_x = output->work_area.x + (output->work_area.width - width) / 2;
+        int pos_y = output->work_area.y + (output->work_area.height - height) / 2;
+
+        wlr_xdg_toplevel_set_maximized(window->wayland->toplevel, false);
+        wlr_xdg_toplevel_set_fullscreen(window->wayland->toplevel, false);
+        wlr_xdg_toplevel_set_size(window->wayland->toplevel, width, height);
+        wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
+    }
+}
+
 static void window_motion(wsland_window *window, int pos_x, int pos_y) {
     wlr_scene_node_set_position(&window->tree->node, pos_x, pos_y);
 }
@@ -196,7 +225,12 @@ static void xdg_toplevel_map(struct wl_listener *listener, void *data) {
     wsland_window *window = wl_container_of(listener, window, events.map);
     window->parent = window->handle->fetch_parent(window);
     window->wayland->surface->data = window;
-    window_center(window);
+
+    if (window->parent) {
+        window_center(window);
+    } else {
+        window_center_output(window);
+    }
 
     if (window->parent) {
         wl_list_insert(&window->parent->children, &window->parent_link);
