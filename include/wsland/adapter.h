@@ -4,9 +4,12 @@
 #include "wsland/server.h"
 #include "wsland/freerdp.h"
 
-#define WSLAND_BORDER_WIDTH 2
 #define RAIL_MARKER_WINDOW_ID  0xFFFFFFFE
 #define RAIL_DESKTOP_WINDOW_ID 0xFFFFFFFF
+
+#define WSLAND_BORDER_WIDTH 2
+#define WSLAND_BORDER_ACTIVE (struct wlr_render_color) { 0.2, 0.6, 1.0, 1.0 }
+#define WSLAND_BORDER_DEACTIVE (struct wlr_render_color) { 0.7, 0.7, 0.7, 1.0 }
 
 enum adapter_type {
     TOPLEVEL, POPUP, XWAYLAND
@@ -23,6 +26,7 @@ typedef struct wsland_window {
     uint32_t surface_id;
     struct wlr_box before;
     struct wlr_box current;
+    struct wlr_render_color border_color;
     int scale_w, scale_h;
     char *title;
 

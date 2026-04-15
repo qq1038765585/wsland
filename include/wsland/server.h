@@ -31,6 +31,7 @@ typedef enum wsland_cursor_mode {
 typedef struct wsland_window_handle {
     char* (*fetch_title)(struct wsland_window *window);
     bool (*fetch_activate)(struct wsland_window *window);
+    struct wlr_box (*fetch_region)(struct wsland_window *window);
     struct wlr_box (*fetch_geometry)(struct wsland_window *window);
     struct wlr_surface* (*fetch_surface)(struct wsland_window *window);
     struct wsland_window* (*fetch_parent)(struct wsland_window *window);
@@ -60,7 +61,9 @@ typedef struct wsland_server_handle {
     void (*request_set_shape)(struct wl_listener *listener, void *data);
     void (*seat_request_cursor)(struct wl_listener *listener, void *data);
     void (*seat_request_selection)(struct wl_listener *listener, void *data);
+    void (*seat_keyboard_focus_change)(struct wl_listener *listener, void *data);
     void (*new_toplevel_decoration)(struct wl_listener *listener, void *data);
+    void (*new_server_decoration)(struct wl_listener *listener, void *data);
     void (*new_virtual_pointer)(struct wl_listener *listener, void *data);
 
     void (*reset_server_cursor)(struct wsland_server *server);
@@ -173,7 +176,9 @@ typedef struct wsland_server {
         struct wl_listener request_set_shape;
         struct wl_listener request_set_selection;
         struct wl_listener cursor_motion_absolute;
+        struct wl_listener seat_keyboard_focus_change;
         struct wl_listener new_toplevel_decoration;
+        struct wl_listener new_server_decoration;
         struct wl_listener new_virtual_pointer;
 
         struct wl_listener wayland_new_toplevel;

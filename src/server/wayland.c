@@ -59,7 +59,13 @@ static struct wlr_surface *fetch_surface(wsland_window *window) {
 }
 
 static struct wlr_box fetch_geometry(wsland_window *window) {
-    return window->wayland->toplevel->base->geometry;
+    struct wlr_box bounds;
+    wlr_surface_get_extents(window->wayland->surface, &bounds);
+
+    struct wlr_box geometry = window->wayland->toplevel->base->geometry;
+    geometry.x -= bounds.x;
+    geometry.y -= bounds.y;
+    return geometry;
 }
 
 static bool fetch_activate(wsland_window *window) {
@@ -449,6 +455,7 @@ static void wayland_new_toplevel(struct wl_listener *listener, void *data) {
     window->server = server;
     window->type = TOPLEVEL;
 
+    window->border_color = WSLAND_BORDER_DEACTIVE;
     window->tree = wlr_scene_xdg_surface_create(&server->scene->tree, window->wayland);
     window->wayland->data = window->tree;
     window->tree->node.data = window;

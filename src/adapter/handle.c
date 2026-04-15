@@ -151,10 +151,7 @@ static void collect_detection(struct wlr_scene_buffer *scene_buffer, int sx, int
     node->geometry = (struct wlr_box){ sx, sy, width, height };
     node->buffer = scene_buffer;
 
-    pixman_region32_t region;
-    pixman_region32_init_rect(&region, sx, sy, width, height);
-    pixman_region32_union(&data->region, &data->region, &region);
-    pixman_region32_fini(&region);
+    pixman_region32_union_rect(&data->region, &data->region, sx, sy, width, height);
 }
 
 static void wsland_window_buffer_destroy(wsland_adapter *adapter, wsland_window *window) {
@@ -502,6 +499,22 @@ static void wsland_window_detection(wsland_output *output, wsland_adapter *adapt
                 pixman_region32_fini(&render_region);
                 pixman_region32_fini(&opaque);
                 wlr_texture_destroy(texture);
+            }
+
+            struct wlr_box geometry = window->handle->fetch_geometry(window);
+            if (!wlr_box_empty(&geometry)) {
+                pixman_region32_t clip_region;
+                pixman_region32_init(&clip_region);
+                pixman_region32_union_rect(&clip_region, &clip_region, geometry.x, geometry.y, geometry.width, WSLAND_BORDER_WIDTH);
+                pixman_region32_union_rect(&clip_region, &clip_region, geometry.x, geometry.y + geometry.height - WSLAND_BORDER_WIDTH, geometry.width, WSLAND_BORDER_WIDTH);
+                pixman_region32_union_rect(&clip_region, &clip_region, geometry.x, geometry.y, WSLAND_BORDER_WIDTH, geometry.height);
+                pixman_region32_union_rect(&clip_region, &clip_region, geometry.x + geometry.width - WSLAND_BORDER_WIDTH, geometry.y, WSLAND_BORDER_WIDTH, geometry.height);
+                wlr_render_pass_add_rect(render_pass, &(const struct wlr_render_rect_options) {
+                    .box = { 0, 0, window->current.width, window->current.height },
+                    .color = window->border_color, .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+                    .clip = &clip_region
+                });
+                pixman_region32_fini(&clip_region);
             }
 
             if (wlr_render_pass_submit(render_pass)) {

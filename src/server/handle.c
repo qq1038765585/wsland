@@ -13,6 +13,7 @@
 #include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_scene.h>
@@ -399,8 +400,8 @@ static void process_cursor_resize(wsland_server *server) {
     int new_width = new_right - new_left;
     int new_height = new_bottom - new_top;
     {
-        new_width = MAX(1 - geo_box.x, new_width);
-        new_height = MAX(1 - geo_box.y, new_height);
+        new_width = MAX(10 - geo_box.x, new_width);
+        new_height = MAX(10 - geo_box.y, new_height);
 
         if (window->handle) {
             wsland_output *output = window->handle->fetch_output(window);
@@ -472,6 +473,45 @@ static void decoration_destroy(struct wl_listener *listener, void *data) {
     wl_list_remove(&window->events.request_decoration_mode.link);
 }
 
+static void seat_keyboard_focus_change(struct wl_listener *listener, void *user_data) {
+    wsland_server *server = wl_container_of(listener, server, events.seat_keyboard_focus_change);
+    struct wlr_seat_keyboard_focus_change_event *event = user_data;
+
+    if (event->old_surface && event->old_surface->data) {
+        wsland_window *window = event->old_surface->data;
+        if (window->type == TOPLEVEL || window->type == XWAYLAND) {
+            window->border_color = WSLAND_BORDER_DEACTIVE;
+
+            wsland_output *output = window->handle->fetch_output(window);
+            if (output) {
+                pixman_region32_union_rect(
+                    &output->scene_output->pending_commit_damage,
+                    &output->scene_output->pending_commit_damage,
+                    window->current.x, window->current.y, window->current.width, window->current.height
+                );
+                wlr_output_schedule_frame(&output->output);
+            }
+        }
+    }
+
+    if (event->new_surface && event->new_surface->data) {
+        wsland_window *window = event->new_surface->data;
+        if (window->type == TOPLEVEL || window->type == XWAYLAND) {
+            window->border_color = WSLAND_BORDER_ACTIVE;
+
+            wsland_output *output = window->handle->fetch_output(window);
+            if (output) {
+                pixman_region32_union_rect(
+                    &output->scene_output->pending_commit_damage,
+                    &output->scene_output->pending_commit_damage,
+                    window->current.x, window->current.y, window->current.width, window->current.height
+                );
+                wlr_output_schedule_frame(&output->output);
+            }
+        }
+    }
+}
+
 static void server_new_toplevel_decoration(struct wl_listener *listener, void *user_data) {
     wsland_server *server = wl_container_of(listener, server, events.new_toplevel_decoration);
     struct wlr_xdg_toplevel_decoration_v1 *decoration = user_data;
@@ -484,6 +524,16 @@ static void server_new_toplevel_decoration(struct wl_listener *listener, void *u
         LISTEN(&decoration->events.request_mode, &window->events.request_decoration_mode, request_decoration_mode);
         LISTEN(&decoration->events.destroy, &window->events.decoration_destroy, decoration_destroy);
     }
+}
+
+static void server_new_server_decoration(struct wl_listener *listener, void *user_data) {
+    wsland_server *server = wl_container_of(listener, server, events.new_server_decoration);
+    struct wlr_server_decoration *decoration = user_data;
+
+    wlr_server_decoration_manager_set_default_mode(
+        server->server_decoration_manager,
+        WLR_SERVER_DECORATION_MANAGER_MODE_SERVER
+    );
 }
 
 static void server_new_virtual_pointer(struct wl_listener *listener, void *user_data) {
@@ -646,7 +696,9 @@ wsland_server_handle wsland_server_handle_impl = {
     .cursor_motion = server_cursor_motion,
     .cursor_button = server_cursor_button,
     .cursor_motion_absolute = server_cursor_motion_absolute,
+    .seat_keyboard_focus_change = seat_keyboard_focus_change,
     .new_toplevel_decoration = server_new_toplevel_decoration,
+    .new_server_decoration = server_new_server_decoration,
     .seat_request_selection = seat_request_set_selection,
     .new_virtual_pointer = server_new_virtual_pointer,
     .seat_request_cursor = seat_request_cursor,

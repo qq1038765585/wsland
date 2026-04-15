@@ -45,7 +45,7 @@ static struct wlr_surface *fetch_surface(wsland_window *window) {
 
 static struct wlr_box fetch_geometry(wsland_window *window) {
     return (struct wlr_box) {
-        window->xwayland->x, window->xwayland->y,
+        0, 0,
         window->xwayland->width, window->xwayland->height
     };
 }
@@ -419,6 +419,7 @@ static wsland_window *create_xwayland_window(wsland_server *server, struct wlr_x
 
     window->type = XWAYLAND;
     window->xwayland->data = window;
+    window->border_color = WSLAND_BORDER_DEACTIVE;
 
     LISTEN(&xwayland_surface->events.request_configure, &window->events.request_configure, xwayland_request_configure);
     LISTEN(&xwayland_surface->events.request_activate, &window->events.request_activate, xwayland_request_activate);

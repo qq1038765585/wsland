@@ -249,13 +249,11 @@ wsland_server *wsland_server_create(wsland_config *config) {
         // seat event
         LISTEN(&server->seat->events.request_set_cursor, &server->events.request_cursor, server->handle->seat_request_cursor);
         LISTEN(&server->seat->events.request_set_selection, &server->events.request_set_selection, server->handle->seat_request_selection);
+        LISTEN(&server->seat->keyboard_state.events.focus_change, &server->events.seat_keyboard_focus_change, server->handle->seat_keyboard_focus_change);
 
         // xdg shell event
         LISTEN(&server->xdg_decoration_manager->events.new_toplevel_decoration, &server->events.new_toplevel_decoration, server->handle->new_toplevel_decoration);
-        wlr_server_decoration_manager_set_default_mode(
-            server->server_decoration_manager,
-            WLR_SERVER_DECORATION_MANAGER_MODE_SERVER
-        );
+        LISTEN(&server->server_decoration_manager->events.new_decoration, &server->events.new_server_decoration, server->handle->new_server_decoration);
         wayland_event_init(server);
 
         // xwayland event
@@ -346,7 +344,9 @@ void wsland_server_destroy(wsland_server *server) {
         wl_list_remove(&server->events.request_cursor.link);
         wl_list_remove(&server->events.request_set_shape.link);
         wl_list_remove(&server->events.request_set_selection.link);
+        wl_list_remove(&server->events.seat_keyboard_focus_change.link);
         wl_list_remove(&server->events.new_toplevel_decoration.link);
+        wl_list_remove(&server->events.new_server_decoration.link);
         wl_list_remove(&server->events.new_virtual_pointer.link);
 
         wlr_scene_node_destroy(&server->scene->tree.node);
