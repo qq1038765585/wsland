@@ -395,7 +395,8 @@ If there's this error: WsL/Service/CreateInstance/CreateVm/HCS/E_ACCESSDENIED
 
 example: 
 
-<img width="404" height="488" alt="image" src="https://github.com/user-attachments/assets/45c33d92-556c-4a3a-a154-834eb354938e" />
+<img width="363" height="450" alt="image" src="https://github.com/user-attachments/assets/25c1f8ba-a522-4b76-be57-fa5ec156a317" />
+
 
 
 ## Known Limitations
