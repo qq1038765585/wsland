@@ -98,6 +98,9 @@ google-chrome
 The Linux GUI applications will be displayed through the windows desktop session.
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0d85e430-75e8-4e93-aef9-b464b20e9ded" />
 
+sway compositor version:
+<img width="1920" height="1080" alt="example" src="https://github.com/user-attachments/assets/3176d0fa-a61c-4ea7-b352-035c8cee219d" />
+
 
 ## Configuration
 
@@ -105,7 +108,11 @@ Optional configuration file:
 
 ```
 C:\ProgramData\Microsoft\WSL\wsland.ini or C:\Users\[your user name]\wsland.ini
+
+sway compositor version:
+C:\ProgramData\Microsoft\WSL\config.sway or C:\Users\[your user name]\config.sway
 ```
+sway compositor version configuration options: please check ==> https://github.com/swaywm/sway/blob/master/config.in
 
 # Configuration
 
