@@ -1,3 +1,7 @@
+# [ Sway / Niri ] Compositor version：
+https://github.com/qq1038765585/wslg-niri \
+https://github.com/qq1038765585/wslg-sway
+---
 # wsland
 
 A custom Wayland GUI environment for WSL based on **wlroots** and **FreeRDP Server**.
@@ -43,8 +47,8 @@ The future direction is to investigate whether existing mature Wayland composito
 
 Possible candidates include:
 
-- Hyprland
 - niri
+- sway
 
 The goal is to reuse existing compositor projects and focus on WSL integration and RDP/RemoteApp functionality.
 
