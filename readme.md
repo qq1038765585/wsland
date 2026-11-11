@@ -1,6 +1,7 @@
-# [ Sway / Niri ] Compositor version：
+## niri/sway compositor version：
 https://github.com/qq1038765585/wslg-niri \
 https://github.com/qq1038765585/wslg-sway
+
 ---
 # wsland
 
