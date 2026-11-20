@@ -1,0 +1,75 @@
+#!/sbin/sh
+
+APPID="$1"
+
+USER=$(grep "^default=" /etc/wsl.conf | cut -d= -f2 | tr -d "\r\n")
+[ -z "$USER" ] && exit 1
+
+DESKTOP_DIRS="
+/usr/share/applications/*
+/home/$USER/.local/share/applications/*
+/run/current-system/sw/share/applications/*
+/etc/profiles/per-user/$USER/share/applications/*
+/var/lib/flatpak/exports/share/applications/*
+/home/$USER/.local/share/flatpak/exports/share/applications/*
+"
+
+DESKTOP=$(find $DESKTOP_DIRS \( -type f -o -type l \) -iname "$APPID.desktop" -print -quit 2>/dev/null)
+
+if [ -z "$DESKTOP" ]; then
+    DESKTOP=$(grep -ril --include="*.desktop" "^StartupWMClass=$APPID$" $DESKTOP_DIRS 2>/dev/null | head -n1)
+fi
+
+if [ -z "$DESKTOP" ]; then
+    DESKTOP=$(grep -ril --include="*.desktop" "^Name=$APPID$" $DESKTOP_DIRS 2>/dev/null | head -n1)
+fi
+
+[ -z "$DESKTOP" ] && exit 1
+
+ICON=$(grep "^Icon=" "$DESKTOP" | cut -d= -f2)
+[ -z "$ICON" ] && exit 1
+
+ICON_DIRS="
+/usr/share/pixmaps
+/usr/share/icons/hicolor/256x256/apps
+/usr/share/icons/hicolor/128x128/apps
+/usr/share/icons/hicolor/96x96/apps
+/usr/share/icons/hicolor/48x48/apps
+/usr/share/icons/hicolor/32x32/apps
+/home/$USER/.local/share/pixmaps
+/home/$USER/.local/share/icons/hicolor/256x256/apps
+/home/$USER/.local/share/icons/hicolor/128x128/apps
+/home/$USER/.local/share/icons/hicolor/96x96/apps
+/home/$USER/.local/share/icons/hicolor/48x48/apps
+/home/$USER/.local/share/icons/hicolor/32x32/apps
+/run/current-system/sw/share/pixmaps
+/run/current-system/sw/share/icons/hicolor/256x256/apps
+/run/current-system/sw/share/icons/hicolor/128x128/apps
+/run/current-system/sw/share/icons/hicolor/96x96/apps
+/run/current-system/sw/share/icons/hicolor/48x48/apps
+/run/current-system/sw/share/icons/hicolor/32x32/apps
+/etc/profiles/per-user/$USER/share/icons/pixmaps
+/etc/profiles/per-user/$USER/share/icons/hicolor/256x256/apps
+/etc/profiles/per-user/$USER/share/icons/hicolor/128x128/apps
+/etc/profiles/per-user/$USER/share/icons/hicolor/96x96/apps
+/etc/profiles/per-user/$USER/share/icons/hicolor/48x48/apps
+/etc/profiles/per-user/$USER/share/icons/hicolor/32x32/apps
+/var/lib/flatpak/exports/share/icons/hicolor/256x256/apps
+/var/lib/flatpak/exports/share/icons/hicolor/128x128/apps
+/var/lib/flatpak/exports/share/icons/hicolor/96x96/apps
+/var/lib/flatpak/exports/share/icons/hicolor/48x48/apps
+/var/lib/flatpak/exports/share/icons/hicolor/32x32/apps
+/home/$USER/.local/share/flatpak/exports/share/icons/hicolor/256x256/apps
+/home/$USER/.local/share/flatpak/exports/share/icons/hicolor/128x128/apps
+/home/$USER/.local/share/flatpak/exports/share/icons/hicolor/96x96/apps
+/home/$USER/.local/share/flatpak/exports/share/icons/hicolor/48x48/apps
+/home/$USER/.local/share/flatpak/exports/share/icons/hicolor/32x32/apps
+/usr/share/icons/hicolor/scalable/apps
+/home/$USER/.local/share/icons/hicolor/scalable/apps
+/run/current-system/sw/share/icons/hicolor/scalable/apps
+/etc/profiles/per-user/$USER/share/icons/hicolor/scalable/apps
+/var/lib/flatpak/exports/share/icons/hicolor/scalable/apps
+/home/$USER/.local/share/flatpak/exports/share/icons/hicolor/scalable/apps
+"
+
+find $ICON_DIRS \( -name "$ICON.png" -o -name "$ICON.svg" \) -print -quit 2>/dev/null

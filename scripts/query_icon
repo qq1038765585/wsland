@@ -1,0 +1,43 @@
+#!/sbin/sh
+
+APPID="$1"
+
+[ -z "$APPID" ] && exit 1
+
+CACHE_DIR="/tmp/wsland-icons"
+mkdir -p "$CACHE_DIR"
+
+PNG_FILE="$CACHE_DIR/${APPID}.png"
+if [ -f "$PNG_FILE" ]; then
+    echo "cat '$PNG_FILE'"
+    exit 0
+fi
+
+DISTROS=$(/mnt/c/WINDOWS/System32/wsl.exe -l -q --running | iconv -f UTF-16LE -t UTF-8 | tr -d '\r')
+for DISTRO in $DISTROS
+do
+
+RESULT=$(/mnt/c/WINDOWS/System32/wsl.exe -d "$DISTRO" /sbin/sh -s "$APPID" < /usr/local/bin/fetch_icon)
+
+if [ -n "$RESULT" ]; then
+    EXT="${RESULT##*.}"
+    EXT=$(echo "$EXT" | tr '[:upper:]' '[:lower:]')
+
+    case "$EXT" in
+        png)
+            /mnt/c/WINDOWS/System32/wsl.exe -d "$DISTRO" -- cat "$RESULT" > "$PNG_FILE"
+            ;;
+        svg)
+            /mnt/c/WINDOWS/System32/wsl.exe -d "$DISTRO" -- cat "$RESULT" | rsvg-convert -w 256 -h 256 -o "$PNG_FILE"
+            ;;
+        *)
+    esac
+
+    if [ -f "$PNG_FILE" ]; then
+        echo "cat '$PNG_FILE'"
+        exit 0
+    fi
+fi
+
+done
+exit 1
