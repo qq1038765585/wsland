@@ -26,8 +26,6 @@ Currently, `wsland` has reached a state that can satisfy my personal daily usage
 
 `wsland` is currently distributed as a pre-built **WSL VHD image**.
 
-This project does not provide source code.
-
 The main purpose of this project is to provide a ready-to-use WSL GUI environment instead of a general-purpose compositor framework.
 
 The provided VHD image contains:
